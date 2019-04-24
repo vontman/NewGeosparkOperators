@@ -3,13 +3,14 @@ package example
 import java.util
 
 import com.vividsolutions.jts.geom.{Envelope, Point}
+import com.vividsolutions.jts.index.quadtree.{Node, NodeBase, Quadtree}
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialOperator.KNNQuery
 import org.datasyslab.geospark.spatialRDD.PointRDD
 
 import scala.collection.JavaConversions._
 
-object OutliersDetection {
+object OutliersDetectionQ {
 
   def findOutliersNaive(rdd: PointRDD, k: Int, n: Int): java.util.List[Point] = {
     rdd.buildIndex(IndexType.RTREE, false)
@@ -50,54 +51,26 @@ object OutliersDetection {
     //    countInLeafNodes.foreach(println(_))
     //    System.exit(0)
     //======================================================================
-    //    val nextLevelQueryRDD = rdd.indexedRDD.rdd
-    //      .map(_.asInstanceOf[STRtree].getRoot)
-    //      .filter(_.asInstanceOf[Boundable].pointsCount() > 0)
-    //      .flatMap(node => {
-    //      if (node.getLevel == 0) {
-    //        List(node)
-    //      } else {
-    //        node.getChildBoundables.map(node => node.asInstanceOf[AbstractNode])
-    //      }
-    //    }).cache
 
-//    val nextLevelQueryRDD = rdd.indexedRDD.rdd
-//      .map(_.asInstanceOf[Quadtree].getRoot)
-//      .map(_.asInstanceOf[NodeBase])
-//      .filter(_.getPointsCount > 0)
-//      .flatMap((node: NodeBase) => {
-//        if (!node.hasChildren) {
-//          List(node)
-//        } else {
-//          node.getSubnode.toList.filter(_ != null)
-//        }
-//      }).cache
+    val nextLevelQueryRDD = rdd.indexedRDD.rdd
+      .map(_.asInstanceOf[Quadtree].getRoot)
+      .map(_.asInstanceOf[NodeBase])
+      .filter(_.getPointsCount > 0)
+      .flatMap((node: NodeBase) => {
+        if (!node.hasChildren) {
+          List(node)
+        } else {
+          node.getSubnode.toList.filter(_ != null)
+        }
+      }).cache
 
-    //    val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: Boundable) => {
-    //      val partitionProps = new PartitionProps()
-    //      partitionProps.setSize(node.pointsCount())
-    //      partitionProps.setEnvelop(node.getBounds.asInstanceOf[Envelope])
-    //
-    //      partitionProps
-    //    }).collect().toList
+    val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: NodeBase) => {
+      val partitionProps = new PartitionProps()
+      partitionProps.setSize(node.getPointsCount)
+      partitionProps.setEnvelop(node.asInstanceOf[Node].getEnvelope)
 
-    //    val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: NodeBase) => {
-    //      val partitionProps = new PartitionProps()
-    //      partitionProps.setSize(node.getPointsCount)
-    //      partitionProps.setEnvelop(node.asInstanceOf[Node].getEnvelope)
-    //
-    //      partitionProps
-    //    }).collect().toList
-
-    //    val partitions: List[PartitionProps] = rdd.indexedRDD.rdd.filter(_.asInstanceOf[STRtree].size != 0)
-    //      .map((index: SpatialIndex) => {
-    //        val partitionProps = new PartitionProps()
-    //        partitionProps.setSize(index.asInstanceOf[STRtree].size())
-    //        partitionProps.setEnvelop(index.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope])
-    //
-    //        partitionProps
-    //      }).collect().toList
-
+      partitionProps
+    }).collect().toList
 
     println("# Partitions before pruning = " + partitions.size)
 
@@ -107,33 +80,15 @@ object OutliersDetection {
 
     println("# Partitions after  pruning = " + partitions.size)
 
-    //    val filteredRDD = rdd.indexedRDD.rdd.filter(_.asInstanceOf[STRtree].size != 0)
-    //      .filter((partition: SpatialIndex) => {
-    //        val currentPartition = new PartitionProps
-    //        currentPartition.sesartition.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope])
-    //        candidates.exists(candidate => candidate.equals(currentPartition))
-    //      }).mapPartitions(indices => indices.flatMap(index => {
-    //      index.query(index.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope]).map(_.asInstanceOf[Point])
-    //    }))
-
-    //    val filteredRDD = nextLevelQueryRDD.filter((node: AbstractNode) => {
-    //      val currentPartition = new PartitionProps
-    //      currentPartition.setEnvelop(node.getBounds.asInstanceOf[Envelope])
-    //      candidates.exists(candidate => candidate.equals(currentPartition))
-    //    }).mapPartitions((indices: Iterator[AbstractNode]) => {
-    //      indices.flatMap(_.getPoints)
-    //    })
-
-
-//    val filteredRDD = nextLevelQueryRDD.filter((node: NodeBase) => {
-//      val currentPartition = new PartitionProps
-//      currentPartition.setEnvelop(node.asInstanceOf[Node].getEnvelope)
-//      candidates.exists(candidate => candidate.equals(currentPartition))
-//    }).mapPartitions((indices: Iterator[NodeBase]) => {
-//      indices.flatMap((node: NodeBase) => {
-//        node.getAllItems
-//      })
-//    })
+    val filteredRDD = nextLevelQueryRDD.filter((node: NodeBase) => {
+      val currentPartition = new PartitionProps
+      currentPartition.setEnvelop(node.asInstanceOf[Node].getEnvelope)
+      candidates.exists(candidate => candidate.equals(currentPartition))
+    }).mapPartitions((indices: Iterator[NodeBase]) => {
+      indices.flatMap((node: NodeBase) => {
+        node.getAllItems
+      })
+    })
 
     println("========> " + filteredRDD.count())
 
@@ -160,12 +115,6 @@ object OutliersDetection {
         false
       }
     }).map(p => p.lower).min
-
-    //    allPartitions.foreach(p => {
-    //      println("===> " + p.lower + ", " + p.upper + " <===")
-    //    })
-    //
-    //    println("==============================================> " + minDkDist)
 
     allPartitions.filter((currentPartition: PartitionProps) => {
       currentPartition.upper >= minDkDist
@@ -215,10 +164,6 @@ object OutliersDetection {
   }
 
   private def getMinDist(env1: Envelope, env2: Envelope): Double = {
-    //    if (env1.intersects(env2)) {
-    //      return 0
-    //    }
-
     val r = (env1.getMinX, env1.getMinY)
     val rd = (env1.getMaxX, env1.getMaxY)
 
@@ -257,19 +202,5 @@ object OutliersDetection {
     val d2 = Math.max(Math.abs(sd._2 - r._2), Math.abs(rd._2 - s._2))
 
     d1 * d1 + d2 * d2
-
-    //    val l = for {
-    //      x <- List((env1.getMinX, env1.getMinY), (env1.getMinX, env1.getMaxY), (env1.getMaxX, env1.getMinY), (env1.getMaxX, env1.getMaxY))
-    //      y <- List((env2.getMinX, env2.getMinY), (env2.getMinX, env2.getMaxY), (env2.getMaxX, env2.getMinY), (env2.getMaxX, env2.getMaxY))
-    //    }
-    //      yield (x, y)
-    //    l.map(p => {
-    //      val p1 = p._1
-    //      val p2 = p._2
-    //
-    //      val d1 = Math.abs(p1._1 - p2._1)
-    //      val d2 = Math.abs(p1._2 - p2._2)
-    //      d1 * d1 + d2 * d2
-    //    }).max
   }
 }

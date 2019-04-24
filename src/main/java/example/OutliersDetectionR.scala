@@ -3,13 +3,14 @@ package example
 import java.util
 
 import com.vividsolutions.jts.geom.{Envelope, Point}
+import com.vividsolutions.jts.index.strtree.{AbstractNode, Boundable, STRtree}
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialOperator.KNNQuery
 import org.datasyslab.geospark.spatialRDD.PointRDD
 
 import scala.collection.JavaConversions._
 
-object OutliersDetection {
+object OutliersDetectionR {
 
   def findOutliersNaive(rdd: PointRDD, k: Int, n: Int): java.util.List[Point] = {
     rdd.buildIndex(IndexType.RTREE, false)
@@ -25,79 +26,24 @@ object OutliersDetection {
 
   def findOutliers(rdd: PointRDD, k: Int, n: Int): PointRDD = {
 
-    //======================================================================
-    //
-    //    val countInLeafNodes: List[Int] = rdd.indexedRDD.rdd.map(index => {
-    //      var nodes: List[NodeBase] = List(index.asInstanceOf[Quadtree].getRoot)
-    //
-    //      var leafNodesCount = 0
-    //      var allInIndex = nodes.map(_.getItems.size()).sum
-    //
-    //      while (nodes.exists(_.hasChildren)) {
-    //        leafNodesCount += nodes.filter(!_.hasChildren).map(_.getItems.size()).sum
-    //        nodes = nodes.filter(_.hasChildren).flatMap(node => {
-    //          node.getSubnode.filter(_ != null)
-    //        })
-    //
-    //        allInIndex += nodes.map(_.getItems.size()).sum
-    //      }
-    //      leafNodesCount += nodes.filter(!_.hasChildren).map(_.getItems.size()).sum
-    //
-    //      allInIndex - leafNodesCount
-    //    }).collect().toList
-    //
-    //
-    //    countInLeafNodes.foreach(println(_))
-    //    System.exit(0)
-    //======================================================================
-    //    val nextLevelQueryRDD = rdd.indexedRDD.rdd
-    //      .map(_.asInstanceOf[STRtree].getRoot)
-    //      .filter(_.asInstanceOf[Boundable].pointsCount() > 0)
-    //      .flatMap(node => {
-    //      if (node.getLevel == 0) {
-    //        List(node)
-    //      } else {
-    //        node.getChildBoundables.map(node => node.asInstanceOf[AbstractNode])
-    //      }
-    //    }).cache
+    val nextLevelQueryRDD = rdd.indexedRDD.rdd
+      .map(_.asInstanceOf[STRtree].getRoot)
+      .filter(_.asInstanceOf[Boundable].pointsCount() > 0)
+      .flatMap(node => {
+        if (node.getLevel == 0) {
+          List(node)
+        } else {
+          node.getChildBoundables.map(node => node.asInstanceOf[AbstractNode])
+        }
+      }).cache
 
-//    val nextLevelQueryRDD = rdd.indexedRDD.rdd
-//      .map(_.asInstanceOf[Quadtree].getRoot)
-//      .map(_.asInstanceOf[NodeBase])
-//      .filter(_.getPointsCount > 0)
-//      .flatMap((node: NodeBase) => {
-//        if (!node.hasChildren) {
-//          List(node)
-//        } else {
-//          node.getSubnode.toList.filter(_ != null)
-//        }
-//      }).cache
+    val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: Boundable) => {
+      val partitionProps = new PartitionProps()
+      partitionProps.setSize(node.pointsCount())
+      partitionProps.setEnvelop(node.getBounds.asInstanceOf[Envelope])
 
-    //    val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: Boundable) => {
-    //      val partitionProps = new PartitionProps()
-    //      partitionProps.setSize(node.pointsCount())
-    //      partitionProps.setEnvelop(node.getBounds.asInstanceOf[Envelope])
-    //
-    //      partitionProps
-    //    }).collect().toList
-
-    //    val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: NodeBase) => {
-    //      val partitionProps = new PartitionProps()
-    //      partitionProps.setSize(node.getPointsCount)
-    //      partitionProps.setEnvelop(node.asInstanceOf[Node].getEnvelope)
-    //
-    //      partitionProps
-    //    }).collect().toList
-
-    //    val partitions: List[PartitionProps] = rdd.indexedRDD.rdd.filter(_.asInstanceOf[STRtree].size != 0)
-    //      .map((index: SpatialIndex) => {
-    //        val partitionProps = new PartitionProps()
-    //        partitionProps.setSize(index.asInstanceOf[STRtree].size())
-    //        partitionProps.setEnvelop(index.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope])
-    //
-    //        partitionProps
-    //      }).collect().toList
-
+      partitionProps
+    }).collect().toList
 
     println("# Partitions before pruning = " + partitions.size)
 
@@ -107,33 +53,13 @@ object OutliersDetection {
 
     println("# Partitions after  pruning = " + partitions.size)
 
-    //    val filteredRDD = rdd.indexedRDD.rdd.filter(_.asInstanceOf[STRtree].size != 0)
-    //      .filter((partition: SpatialIndex) => {
-    //        val currentPartition = new PartitionProps
-    //        currentPartition.sesartition.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope])
-    //        candidates.exists(candidate => candidate.equals(currentPartition))
-    //      }).mapPartitions(indices => indices.flatMap(index => {
-    //      index.query(index.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope]).map(_.asInstanceOf[Point])
-    //    }))
-
-    //    val filteredRDD = nextLevelQueryRDD.filter((node: AbstractNode) => {
-    //      val currentPartition = new PartitionProps
-    //      currentPartition.setEnvelop(node.getBounds.asInstanceOf[Envelope])
-    //      candidates.exists(candidate => candidate.equals(currentPartition))
-    //    }).mapPartitions((indices: Iterator[AbstractNode]) => {
-    //      indices.flatMap(_.getPoints)
-    //    })
-
-
-//    val filteredRDD = nextLevelQueryRDD.filter((node: NodeBase) => {
-//      val currentPartition = new PartitionProps
-//      currentPartition.setEnvelop(node.asInstanceOf[Node].getEnvelope)
-//      candidates.exists(candidate => candidate.equals(currentPartition))
-//    }).mapPartitions((indices: Iterator[NodeBase]) => {
-//      indices.flatMap((node: NodeBase) => {
-//        node.getAllItems
-//      })
-//    })
+    val filteredRDD = nextLevelQueryRDD.filter((node: AbstractNode) => {
+      val currentPartition = new PartitionProps
+      currentPartition.setEnvelop(node.getBounds.asInstanceOf[Envelope])
+      candidates.exists(candidate => candidate.equals(currentPartition))
+    }).mapPartitions((indices: Iterator[AbstractNode]) => {
+      indices.flatMap(_.getPoints)
+    })
 
     println("========> " + filteredRDD.count())
 
@@ -160,12 +86,6 @@ object OutliersDetection {
         false
       }
     }).map(p => p.lower).min
-
-    //    allPartitions.foreach(p => {
-    //      println("===> " + p.lower + ", " + p.upper + " <===")
-    //    })
-    //
-    //    println("==============================================> " + minDkDist)
 
     allPartitions.filter((currentPartition: PartitionProps) => {
       currentPartition.upper >= minDkDist
