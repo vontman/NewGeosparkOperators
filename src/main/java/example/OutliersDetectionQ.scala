@@ -3,7 +3,6 @@ package example
 import java.util
 
 import com.vividsolutions.jts.geom.{Envelope, Point}
-import com.vividsolutions.jts.index.quadtree.{Node, NodeBase, Quadtree}
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialOperator.KNNQuery
 import org.datasyslab.geospark.spatialRDD.PointRDD

@@ -7,8 +7,8 @@ import com.vividsolutions.jts.geom.Envelope
 class PartitionProps extends Serializable {
 
   private var _envelope: Envelope = _
+  private val _subPartitions: util.ArrayList[PartitionProps] = new util.ArrayList[PartitionProps]()
   private var _size: Int = _
-  private val _neighbours: util.List[PartitionProps] = new util.ArrayList[PartitionProps]()
   private var _lower: Double = 0.0
   private var _upper: Double = 0.0
 
@@ -28,8 +28,6 @@ class PartitionProps extends Serializable {
     this._size = newVal
   }
 
-  def neighbours: util.List[PartitionProps] = _neighbours
-
   def lower: Double = _lower
 
   def upper: Double = _upper
@@ -38,18 +36,13 @@ class PartitionProps extends Serializable {
 
   def envelop: Envelope = _envelope
 
+  def subPartitions: util.List[PartitionProps] = _subPartitions
 
-  def addNeighbour(partitionProps: PartitionProps): Boolean = {
-    _neighbours.add(partitionProps)
-  }
+  def addSubPartition(subPartition: PartitionProps): Boolean = _subPartitions.add(subPartition)
 
-  def addAllNeighbours(allNeighbours: util.Collection[PartitionProps]): Boolean = {
-    _neighbours.addAll(allNeighbours)
-  }
 
-  override def hashCode(): Int = {
-    _envelope.hashCode()
-  }
+  override def hashCode(): Int = _envelope.hashCode
+
 
   override def equals(obj: Any): Boolean = {
     obj.isInstanceOf[PartitionProps] && obj.asInstanceOf[PartitionProps].hashCode().equals(this.hashCode())
