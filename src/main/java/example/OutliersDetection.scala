@@ -58,7 +58,7 @@ object OutliersDetection {
     newRdd.analyze()
 
     newRdd.spatialPartitioning(GridType.EQUALGRID)
-    newRdd.buildIndex(IndexType.QUADTREE, true)
+    newRdd.buildIndex(IndexType.RTREE, true)
     newRdd.indexedRDD.rdd.cache()
 
     newRdd
@@ -66,6 +66,11 @@ object OutliersDetection {
 
   private def computeCandidatePartitions(allPartitions: List[PartitionProps], k: Int, n: Int): Iterable[PartitionProps] = {
     allPartitions.foreach(partition => computeLowerUpper(allPartitions, partition, k))
+
+    println("============================================================")
+    allPartitions.foreach(p => {
+      println(p.size + "\t" + p.lower + "\t" + p.upper + "\t" + p.envelop)
+    })
 
     var pointsToTake = n
     val minDkDist = allPartitions.sortBy(p => -p.lower).takeWhile(p => {
@@ -103,8 +108,7 @@ object OutliersDetection {
           } else {
             false
           }
-        })
-        .map(p => getMinDist(partition.envelop, p.envelop)).max
+        }).map(p => getMinDist(partition.envelop, p.envelop)).max
     )
 
 
@@ -119,8 +123,7 @@ object OutliersDetection {
           } else {
             false
           }
-        })
-        .map(p => getMaxDist(partition.envelop, p.envelop)).max
+        }).map(p => getMaxDist(partition.envelop, p.envelop)).max
     )
   }
 

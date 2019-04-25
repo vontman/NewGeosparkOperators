@@ -35,11 +35,11 @@ public class Example {
 
     private static List<Point> generateRandomInput() {
         Random rand = new Random();
-        return IntStream.range(0, 100000).mapToObj((x) ->
+        return IntStream.range(0, 1000).mapToObj((x) ->
                 geometryFactory.createPoint(
                         new Coordinate(
-                                rand.nextGaussian() * rand.nextInt(50000),
-                                rand.nextGaussian() * rand.nextInt(50000)
+                                rand.nextGaussian() * rand.nextInt(500),
+                                rand.nextGaussian() * rand.nextInt(500)
                         )))
                 .collect(Collectors.toList());
 
@@ -76,8 +76,11 @@ public class Example {
 
         JavaSparkContext sc = new JavaSparkContext(conf);
 
-        List<Point> points = generateRandomInput();
-        PointRDD data = new PointRDD(sc.parallelize(points, 10));
+
+//        List<Point> points = generateRandomInput();
+//        PointRDD data = new PointRDD(sc.parallelize(points, 50));
+
+        PointRDD data = new GenerateZipfData(0.8).generate(100000, 800000, sc.sc());
 
         data.analyze();
         data.spatialPartitioning(GridType.EQUALGRID);
@@ -92,7 +95,7 @@ public class Example {
         do {
             prevCount = nextRdd.approximateTotalCount;
             System.out.println("Before # of Points = " + prevCount);
-            nextRdd = OutliersDetection.findOutliers(nextRdd, 500, 500);
+            nextRdd = OutliersDetectionQ.findOutliers(nextRdd, 1000, 500);
             nextCount = nextRdd.approximateTotalCount;
             System.out.println("After # of Points = " + nextCount);
             if (prevCount != nextCount)

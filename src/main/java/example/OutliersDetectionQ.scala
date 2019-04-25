@@ -62,7 +62,43 @@ object OutliersDetectionQ {
         } else {
           node.getSubnode.toList.filter(_ != null)
         }
-      }).cache
+      }).flatMap((node: NodeBase) => {
+      if (!node.hasChildren) {
+        List(node)
+      } else {
+        node.getSubnode.toList.filter(_ != null)
+      }
+    }).flatMap((node: NodeBase) => {
+      if (!node.hasChildren) {
+        List(node)
+      } else {
+        node.getSubnode.toList.filter(_ != null)
+      }
+    }).flatMap((node: NodeBase) => {
+      if (!node.hasChildren) {
+        List(node)
+      } else {
+        node.getSubnode.toList.filter(_ != null)
+      }
+    }).flatMap((node: NodeBase) => {
+      if (!node.hasChildren) {
+        List(node)
+      } else {
+        node.getSubnode.toList.filter(_ != null)
+      }
+    }).flatMap((node: NodeBase) => {
+      if (!node.hasChildren) {
+        List(node)
+      } else {
+        node.getSubnode.toList.filter(_ != null)
+      }
+    }).flatMap((node: NodeBase) => {
+      if (!node.hasChildren) {
+        List(node)
+      } else {
+        node.getSubnode.toList.filter(_ != null)
+      }
+    }).cache
 
     val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: NodeBase) => {
       val partitionProps = new PartitionProps()

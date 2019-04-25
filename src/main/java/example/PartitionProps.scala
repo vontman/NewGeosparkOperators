@@ -1,13 +1,10 @@
 package example
 
-import java.util
-
 import com.vividsolutions.jts.geom.Envelope
 
 class PartitionProps extends Serializable {
 
   private var _envelope: Envelope = _
-  private val _subPartitions: util.ArrayList[PartitionProps] = new util.ArrayList[PartitionProps]()
   private var _size: Int = _
   private var _lower: Double = 0.0
   private var _upper: Double = 0.0
@@ -35,11 +32,6 @@ class PartitionProps extends Serializable {
   def size: Int = this._size
 
   def envelop: Envelope = _envelope
-
-  def subPartitions: util.List[PartitionProps] = _subPartitions
-
-  def addSubPartition(subPartition: PartitionProps): Boolean = _subPartitions.add(subPartition)
-
 
   override def hashCode(): Int = _envelope.hashCode
 

@@ -35,7 +35,19 @@ object OutliersDetectionR {
         } else {
           node.getChildBoundables.map(node => node.asInstanceOf[AbstractNode])
         }
-      }).cache
+      }).flatMap(node => {
+      if (node.getLevel == 0) {
+        List(node)
+      } else {
+        node.getChildBoundables.map(node => node.asInstanceOf[AbstractNode])
+      }
+    }).flatMap(node => {
+      if (node.getLevel == 0) {
+        List(node)
+      } else {
+        node.getChildBoundables.map(node => node.asInstanceOf[AbstractNode])
+      }
+    }).cache
 
     val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: Boundable) => {
       val partitionProps = new PartitionProps()
@@ -44,6 +56,10 @@ object OutliersDetectionR {
 
       partitionProps
     }).collect().toList
+
+    partitions.foreach(p => {
+      println(p.envelop + "\t" + p.size)
+    })
 
     println("# Partitions before pruning = " + partitions.size)
 
@@ -61,14 +77,11 @@ object OutliersDetectionR {
       indices.flatMap(_.getPoints)
     })
 
-    println("========> " + filteredRDD.count())
-
-
     val newRdd = new PointRDD(filteredRDD)
     newRdd.analyze()
 
     newRdd.spatialPartitioning(GridType.EQUALGRID)
-    newRdd.buildIndex(IndexType.QUADTREE, true)
+    newRdd.buildIndex(IndexType.RTREE, true)
     newRdd.indexedRDD.rdd.cache()
 
     newRdd
