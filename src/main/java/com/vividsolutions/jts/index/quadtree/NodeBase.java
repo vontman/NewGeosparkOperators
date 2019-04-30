@@ -109,6 +109,8 @@ public abstract class NodeBase implements Serializable {
 //DEBUG System.out.print(itemCount);
     }
 
+    abstract public Envelope getBounds();
+
     /**
      * Removes a single item from this subtree.
      *

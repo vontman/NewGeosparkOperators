@@ -17,6 +17,28 @@ import org.datasyslab.geosparkviz.utils.ImageType
 object Plotter {
   val geometryFactory: GeometryFactory = new GeometryFactory()
 
+  def visualizeNaiive(sc: JavaSparkContext, pointRDD: PointRDD, plotName: String): Unit = {
+
+    val scatterOutput = Paths.get("visualization", plotName).toString
+
+
+    val resX = 800
+    val resY = 800
+
+    val dataOperator = new ScatterPlot(resX, resY, pointRDD.boundaryEnvelope, false, false)
+    dataOperator.CustomizeColor(255, 255, 255, 255, Color.RED, true)
+    dataOperator.Visualize(sc, pointRDD)
+
+    val afterImage = new BufferedImage(resX, resY, BufferedImage.TYPE_INT_ARGB)
+    val afterImageG = afterImage.getGraphics
+    afterImageG.setColor(Color.BLACK)
+    afterImageG.fillRect(0, 0, resX, resY)
+    afterImageG.drawImage(dataOperator.rasterImage, 0, 0, null)
+
+    val imageGenerator = new ImageGenerator()
+    imageGenerator.SaveRasterImageAsLocalFile(afterImage, scatterOutput, ImageType.PNG)
+  }
+
   def visualizeR(sc: JavaSparkContext, pointRDD: PointRDD, plotName: String, withBoarders: Boolean = true): Unit = {
 
     val scatterOutput = Paths.get("visualization", plotName).toString
@@ -65,7 +87,7 @@ object Plotter {
     imageGenerator.SaveRasterImageAsLocalFile(afterImage, scatterOutput, ImageType.PNG)
   }
 
-  def visualizeQuad(sc: JavaSparkContext, pointRDD: PointRDD, plotName: String, withBoarders: Boolean = true): Unit = {
+  def visualizeQ(sc: JavaSparkContext, pointRDD: PointRDD, plotName: String, withBoarders: Boolean = true): Unit = {
 
     val scatterOutput = Paths.get("visualization", plotName).toString
 

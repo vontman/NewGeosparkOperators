@@ -39,4 +39,8 @@ class PartitionProps extends Serializable {
   override def equals(obj: Any): Boolean = {
     obj.isInstanceOf[PartitionProps] && obj.asInstanceOf[PartitionProps].hashCode().equals(this.hashCode())
   }
+
+  override def toString = {
+    s"PartitionProps(_envelope=${_envelope}, _size=${_size}, _lower=${_lower}, _upper=${_upper})"
+  }
 }

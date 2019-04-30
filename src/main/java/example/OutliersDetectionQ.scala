@@ -4,6 +4,7 @@ import java.util
 
 import com.vividsolutions.jts.geom.{Envelope, Point}
 import com.vividsolutions.jts.index.quadtree.{Node, NodeBase, Quadtree}
+import org.apache.spark.rdd.RDD
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialOperator.KNNQuery
 import org.datasyslab.geospark.spatialRDD.PointRDD
@@ -24,81 +25,8 @@ object OutliersDetectionQ {
     }).sortBy(_._1).takeRight(n).map(x => x._2).toList
   }
 
-  def findOutliers(rdd: PointRDD, k: Int, n: Int): PointRDD = {
-
-    //======================================================================
-    //
-    //    val countInLeafNodes: List[Int] = rdd.indexedRDD.rdd.map(index => {
-    //      var nodes: List[NodeBase] = List(index.asInstanceOf[Quadtree].getRoot)
-    //
-    //      var leafNodesCount = 0
-    //      var allInIndex = nodes.map(_.getItems.size()).sum
-    //
-    //      while (nodes.exists(_.hasChildren)) {
-    //        leafNodesCount += nodes.filter(!_.hasChildren).map(_.getItems.size()).sum
-    //        nodes = nodes.filter(_.hasChildren).flatMap(node => {
-    //          node.getSubnode.filter(_ != null)
-    //        })
-    //
-    //        allInIndex += nodes.map(_.getItems.size()).sum
-    //      }
-    //      leafNodesCount += nodes.filter(!_.hasChildren).map(_.getItems.size()).sum
-    //
-    //      allInIndex - leafNodesCount
-    //    }).collect().toList
-    //
-    //
-    //    countInLeafNodes.foreach(println(_))
-    //    System.exit(0)
-    //======================================================================
-
-    val nextLevelQueryRDD = rdd.indexedRDD.rdd
-      .map(_.asInstanceOf[Quadtree].getRoot)
-      .map(_.asInstanceOf[NodeBase])
-      .filter(_.getPointsCount > 0)
-      .flatMap((node: NodeBase) => {
-        if (!node.hasChildren) {
-          List(node)
-        } else {
-          node.getSubnode.toList.filter(_ != null)
-        }
-      }).flatMap((node: NodeBase) => {
-      if (!node.hasChildren) {
-        List(node)
-      } else {
-        node.getSubnode.toList.filter(_ != null)
-      }
-    }).flatMap((node: NodeBase) => {
-      if (!node.hasChildren) {
-        List(node)
-      } else {
-        node.getSubnode.toList.filter(_ != null)
-      }
-    }).flatMap((node: NodeBase) => {
-      if (!node.hasChildren) {
-        List(node)
-      } else {
-        node.getSubnode.toList.filter(_ != null)
-      }
-    }).flatMap((node: NodeBase) => {
-      if (!node.hasChildren) {
-        List(node)
-      } else {
-        node.getSubnode.toList.filter(_ != null)
-      }
-    }).flatMap((node: NodeBase) => {
-      if (!node.hasChildren) {
-        List(node)
-      } else {
-        node.getSubnode.toList.filter(_ != null)
-      }
-    }).flatMap((node: NodeBase) => {
-      if (!node.hasChildren) {
-        List(node)
-      } else {
-        node.getSubnode.toList.filter(_ != null)
-      }
-    }).cache
+  def findOutliers(rdd: PointRDD, k: Int, n: Int, iteration_number: Int, levels: Int): PointRDD = {
+    val nextLevelQueryRDD: RDD[NodeBase] = expandLevels(levels, rdd)
 
     val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: NodeBase) => {
       val partitionProps = new PartitionProps()
@@ -110,11 +38,12 @@ object OutliersDetectionQ {
 
     println("# Partitions before pruning = " + partitions.size)
 
-    Plotter.plotPartitions(rdd.indexedRDD.sparkContext, partitions, "partitionsPlot")
+    Plotter.plotPartitions(rdd.indexedRDD.sparkContext, partitions, "partitionsPlot_" + iteration_number)
 
     val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitions, k, n)
+    //println(candidates.take(10).mkString("\n"))
 
-    println("# Partitions after  pruning = " + partitions.size)
+    println("# Partitions after  pruning = " + candidates.size)
 
     val filteredRDD = nextLevelQueryRDD.filter((node: NodeBase) => {
       val currentPartition = new PartitionProps
@@ -126,20 +55,42 @@ object OutliersDetectionQ {
       })
     })
 
-    println("========> " + filteredRDD.count())
-
-
     val newRdd = new PointRDD(filteredRDD)
     newRdd.analyze()
 
-    newRdd.spatialPartitioning(GridType.EQUALGRID)
+    newRdd.spatialPartitioning(GridType.QUADTREE)
     newRdd.buildIndex(IndexType.QUADTREE, true)
     newRdd.indexedRDD.rdd.cache()
 
     newRdd
   }
 
+  private def expandLevels(levels: Int, rdd: PointRDD): RDD[NodeBase] = {
+    var nextLevelGrids = rdd.indexedRDD.rdd
+      .map(_.asInstanceOf[Quadtree].getRoot)
+      .map(_.asInstanceOf[NodeBase])
+      .filter(_.getPointsCount > 0)
+    for (_ <- 0 to levels) {
+      nextLevelGrids = nextLevelGrids.flatMap((node: NodeBase) => {
+        if (!node.hasChildren) {
+          List(node)
+        } else {
+          val extraNode = new Node(node.getBounds, 10)
+          extraNode.addAllItems(node.getItems)
+
+          if (node.hasItems) {
+            extraNode :: node.getSubnode.toList.filter(_ != null)
+          } else {
+            node.getSubnode.toList.filter(_ != null)
+          }
+        }
+      })
+    }
+    nextLevelGrids.cache()
+  }
+
   private def computeCandidatePartitions(allPartitions: List[PartitionProps], k: Int, n: Int): Iterable[PartitionProps] = {
+//    allPartitions.parallelStream().forEach(partition => computeLowerUpper(allPartitions, partion, k))
     allPartitions.foreach(partition => computeLowerUpper(allPartitions, partition, k))
 
     var pointsToTake = n

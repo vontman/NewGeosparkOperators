@@ -37,6 +37,9 @@ import com.vividsolutions.jts.geom.Coordinate;
 import com.vividsolutions.jts.geom.Envelope;
 import com.vividsolutions.jts.util.Assert;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 /**
  * QuadRoot is the root of a single Quadtree.  It is centred at the origin,
  * and does not have a defined extent.
@@ -50,6 +53,18 @@ public class Root
     private static final Coordinate origin = new Coordinate(0.0, 0.0);
 
     public Root() {
+    }
+
+    @Override
+    public Envelope getBounds() {
+        if (!hasChildren()) {
+            Envelope env = new Envelope();
+            env.init();
+            return env;
+        }
+        Envelope env = Arrays.stream(subnode).filter(Objects::nonNull).findAny().map(Node::getEnvelope).get();
+        Arrays.stream(subnode).filter(Objects::nonNull).map(Node::getEnvelope).forEach(env::expandToInclude);
+        return env;
     }
 
     /**

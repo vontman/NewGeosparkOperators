@@ -1,8 +1,6 @@
 package example;
 
 
-import com.vividsolutions.jts.geom.Coordinate;
-import com.vividsolutions.jts.geom.GeometryFactory;
 import com.vividsolutions.jts.geom.Point;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -14,10 +12,10 @@ import org.datasyslab.geospark.enums.IndexType;
 import org.datasyslab.geospark.spatialRDD.PointRDD;
 import org.datasyslab.geosparkviz.core.Serde.GeoSparkVizKryoRegistrator;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 
 // TODO: Auto-generated Javadoc
@@ -28,39 +26,6 @@ import java.util.stream.IntStream;
 public class Example {
 
     /**
-     * The geometry factory.
-     */
-    private static GeometryFactory geometryFactory;
-
-
-    private static List<Point> generateRandomInput() {
-        Random rand = new Random();
-        return IntStream.range(0, 1000).mapToObj((x) ->
-                geometryFactory.createPoint(
-                        new Coordinate(
-                                rand.nextGaussian() * rand.nextInt(500),
-                                rand.nextGaussian() * rand.nextInt(500)
-                        )))
-                .collect(Collectors.toList());
-
-    }
-
-    private static List<Point> generateLolData() {
-        Random rand = new Random();
-        List<Point> lol1 = IntStream.range(0, 100000).mapToObj((x) ->
-                geometryFactory.createPoint(
-                        new Coordinate(rand.nextInt(10000), rand.nextInt(10000))))
-                .collect(Collectors.toList());
-//        List<Point> lol2 = IntStream.range(0, 1000).mapToObj((x) ->
-//                geometryFactory.createPoint(
-//                        new Coordinate(200 + rand.nextInt(200), 200 + rand.nextInt(200))))
-//                .collect(Collectors.toList());
-//
-//        lol1.addAll(lol2);
-        return lol1;
-    }
-
-    /**
      * The main method.
      *
      * @param args the arguments
@@ -69,68 +34,75 @@ public class Example {
         Logger.getLogger("org").setLevel(Level.ERROR);
         Logger.getLogger("akka").setLevel(Level.ERROR);
 
-        geometryFactory = new GeometryFactory();
         SparkConf conf = new SparkConf().setAppName("GeoSparkRunnableExample").setMaster("local[*]");
         conf.set("spark.serializer", KryoSerializer.class.getName());
         conf.set("spark.kryo.registrator", GeoSparkVizKryoRegistrator.class.getName());
 
         JavaSparkContext sc = new JavaSparkContext(conf);
 
+        deleteOldValidation();
 
-//        List<Point> points = generateRandomInput();
-//        PointRDD data = new PointRDD(sc.parallelize(points, 50));
-
-        PointRDD data = new GenerateZipfData(0.8).generate(100000, 800000, sc.sc());
+        PointRDD data = new GenerateNonUniformData().generate(100000, 800000, sc.sc());
 
         data.analyze();
-        data.spatialPartitioning(GridType.EQUALGRID);
+        data.spatialPartitioning(GridType.QUADTREE);
         data.buildIndex(IndexType.QUADTREE, true);
         data.indexedRDD.cache();
 
-        Plotter.visualizeQuad(sc, data, "OriginalData", true);
+        Plotter.visualizeQ(sc, data, "OriginalData", true);
 
         PointRDD nextRdd = data;
         long prevCount, nextCount;
         int pruningIteration = 0;
-        do {
-            prevCount = nextRdd.approximateTotalCount;
+//        do {
+        List<Integer> levels = Arrays.asList(3, 6, 10);
+        for (Integer level : levels) {
+            prevCount = data.countWithoutDuplicates();
             System.out.println("Before # of Points = " + prevCount);
-            nextRdd = OutliersDetectionQ.findOutliers(nextRdd, 1000, 500);
-            nextCount = nextRdd.approximateTotalCount;
-            System.out.println("After # of Points = " + nextCount);
+            nextRdd = OutliersDetectionQ.findOutliers(data, 300, 200, pruningIteration, level);
+            nextCount = nextRdd.countWithoutDuplicates();
+            System.out.println("After # of Points = " + nextCount + "\n");
+            System.out.println("Pruning = " + ((1.0 * prevCount - nextCount)/prevCount*100.0) + "\n");
             if (prevCount != nextCount)
-                Plotter.visualizeR(sc, nextRdd, "FilteredData_" + pruningIteration++, true);
-        } while (nextCount < prevCount);
+                Plotter.visualizeQ(sc, nextRdd, "FilteredData_" + level, true);
+        }
 
-//        data = new PointRDD(sc.parallelize(points));
-//        data.analyze();
-//        data.spatialPartitioning(GridType.RTREE);
-//        data.buildIndex(IndexType.RTREE, true);
-//        data.indexedRDD.cache();
-//
-//        int found = 0;
-//        List<Point> doubtList = nextRdd.spatialPartitionedRDD.collect();
-//        List<Point> ans = OutliersDetection.findOutliersNaive(data, 51, 50);
-//        for (Point p : ans) {
-//            for (Point x : doubtList) {
-//                if (x.getX() == p.getX() && x.getY() == p.getY()) {
-//                    found++;
-//                }
-//            }
-//        }
-//        System.out.println(ans.size() == found ? "VALID SOLUTION" : "INVALID SOLUTION");
-//        PointRDD solutionRdd = new PointRDD(sc.parallelize(ans));
-//
-//        solutionRdd.analyze();
-//        solutionRdd.spatialPartitioning(GridType.RTREE);
-//        solutionRdd.buildIndex(IndexType.RTREE, true);
-//        solutionRdd.indexedRDD.cache();
+//        } while (nextCount < prevCount);
 
-//        Plotter.visualize(sc, solutionRdd, "NaiiveSolution", true);
-//        System.out.println(ans.size() + " Outliers were found!");
-
+//        runNaiiveSolution(sc, data, nextRdd);
 
         sc.stop();
     }
 
+    private static void runNaiiveSolution(JavaSparkContext sc, PointRDD data, PointRDD nextRdd) throws Exception {
+        data.spatialPartitioning(GridType.QUADTREE);
+        data.buildIndex(IndexType.QUADTREE, true);
+        data.indexedRDD.cache();
+
+        int found = 0;
+        List<Point> doubtList = nextRdd.spatialPartitionedRDD.collect();
+        List<Point> ans = OutliersDetection.findOutliersNaive(data, 100, 100);
+        for (Point p : ans) {
+            for (Point x : doubtList) {
+                if (x.getX() == p.getX() && x.getY() == p.getY()) {
+                    found++;
+                }
+            }
+        }
+        System.out.println(ans.size() == found ? "VALID SOLUTION" : "INVALID SOLUTION");
+        PointRDD solutionRdd = new PointRDD(sc.parallelize(ans));
+
+        solutionRdd.analyze();
+
+        Plotter.visualizeNaiive(sc, solutionRdd, "NaiiveSolution");
+        System.out.println(ans.size() + " Outliers were found!");
+
+    }
+
+    private static void deleteOldValidation() throws IOException, InterruptedException {
+        System.out.println("Delete old visualizations");
+        File visualizationsFile = new File("visualization");
+        Process process = Runtime.getRuntime().exec(String.format("rm -rf %s", visualizationsFile.getAbsolutePath()));
+        process.waitFor();
+    }
 }

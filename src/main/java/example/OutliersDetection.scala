@@ -1,7 +1,5 @@
 package example
 
-import java.util
-
 import com.vividsolutions.jts.geom.{Envelope, Point}
 import com.vividsolutions.jts.index.SpatialIndex
 import com.vividsolutions.jts.index.strtree.STRtree
@@ -43,7 +41,7 @@ object OutliersDetection {
 
     val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitions, k, n)
 
-    println("# Partitions after  pruning = " + partitions.size)
+    println("# Partitions after  pruning = " + candidates.size)
 
     val filteredRDD = rdd.indexedRDD.rdd.filter(_.asInstanceOf[STRtree].size != 0)
       .filter((partition: SpatialIndex) => {
@@ -84,16 +82,17 @@ object OutliersDetection {
 
     allPartitions.filter((currentPartition: PartitionProps) => {
       currentPartition.upper >= minDkDist
-    }).flatMap((currentPartition: PartitionProps) => {
-      val ret = new util.HashSet[PartitionProps]()
-      ret.addAll(
-        allPartitions
-          .filter(p => !p.equals(currentPartition))
-          .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
-      )
-      ret.add(currentPartition)
-      ret
-    }).toSet
+    })
+//      .flatMap((currentPartition: PartitionProps) => {
+//      val ret = new util.HashSet[PartitionProps]()
+//      ret.addAll(
+//        allPartitions
+//          .filter(p => !p.equals(currentPartition))
+//          .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
+//      )
+//      ret.add(currentPartition)
+//      ret
+//    }).toSet
   }
 
   private def computeLowerUpper(allPartitions: List[PartitionProps], partition: PartitionProps, k: Int): Unit = {
