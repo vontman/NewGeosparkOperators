@@ -33,6 +33,8 @@
  */
 package com.vividsolutions.jts.index.strtree;
 
+import com.vividsolutions.jts.geom.Envelope;
+import com.vividsolutions.jts.geom.Point;
 import java.io.Serializable;
 
 /**
@@ -57,6 +59,18 @@ public class ItemBoundable implements Boundable, Serializable {
   @Override
   public int pointsCount() {
     return 1;
+  }
+
+  @Override
+  public double averageX() {
+    if (item instanceof Point) return ((Point)item).getX();
+    return ((Envelope)item).getMinX();
+  }
+
+  @Override
+  public double averageY() {
+    if (item instanceof Point) return ((Point)item).getY();
+    return ((Envelope)item).getMinY();
   }
 
   public Object getItem() { return item; }

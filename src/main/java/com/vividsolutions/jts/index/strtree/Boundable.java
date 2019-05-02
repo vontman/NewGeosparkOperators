@@ -49,4 +49,6 @@ public interface Boundable {
    */
   Object getBounds();
   int pointsCount();
+  double averageX();
+  double averageY();
 }

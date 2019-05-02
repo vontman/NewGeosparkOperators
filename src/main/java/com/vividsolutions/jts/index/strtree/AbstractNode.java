@@ -49,7 +49,7 @@ import java.util.List;
  *
  * @version 1.7
  */
-public abstract class AbstractNode implements com.vividsolutions.jts.index.strtree.Boundable, Serializable {
+public abstract class AbstractNode implements Boundable, Serializable {
   /**
    * 
    */
@@ -59,6 +59,8 @@ public abstract class AbstractNode implements com.vividsolutions.jts.index.strtr
   private Object bounds = null;
   private int level;
   private int pointsCount = 0;
+  private double sumX = 0;
+  private double sumY = 0;
 
   /**
    * Default constructor required for serialization.
@@ -68,6 +70,16 @@ public abstract class AbstractNode implements com.vividsolutions.jts.index.strtr
 
   public int pointsCount() {
     return pointsCount;
+  }
+
+  @Override
+  public double averageX() {
+    return sumX / pointsCount;
+  }
+
+  @Override
+  public double averageY() {
+    return sumY / pointsCount;
   }
 
   /**
@@ -90,11 +102,13 @@ public abstract class AbstractNode implements com.vividsolutions.jts.index.strtr
   public void setChildBoundables(ArrayList childBoundables) {
     this.childBoundables = childBoundables;
     pointsCount = 0;
+    sumX = 0;
+    sumY = 0;
     childBoundables.forEach(node -> {
-      if (node instanceof AbstractNode)
-        pointsCount += ((AbstractNode) node).pointsCount();
-      else
-        pointsCount ++;
+      Boundable bnode = (Boundable) node;
+      pointsCount += bnode.pointsCount();
+      sumX += bnode.averageX() * bnode.pointsCount();
+      sumY += bnode.averageY() * bnode.pointsCount();
     });
   }
 
@@ -157,10 +171,8 @@ public abstract class AbstractNode implements com.vividsolutions.jts.index.strtr
   public void addChildBoundable(Boundable childBoundable) {
     Assert.isTrue(bounds == null);
     childBoundables.add(childBoundable);
-    if (childBoundable instanceof AbstractNode)
-      pointsCount += ((AbstractNode) childBoundable).pointsCount();
-    else
-      pointsCount ++;
-
+    pointsCount += childBoundable.pointsCount();
+    sumX += childBoundable.averageX() * childBoundable.pointsCount();
+    sumY += childBoundable.averageY() * childBoundable.pointsCount();
   }
 }
