@@ -157,13 +157,13 @@ object Plotter {
       partitions.map(partition => {
         val env = partition.envelop
 
-        geometryFactory.createPolygon(geometryFactory.createLinearRing(Array(
+        geometryFactory.createPolygon(Array(
           new Coordinate(env.getMinX, env.getMinY),
           new Coordinate(env.getMinX, env.getMaxY),
           new Coordinate(env.getMaxX, env.getMaxY),
           new Coordinate(env.getMaxX, env.getMinY),
           new Coordinate(env.getMinX, env.getMinY)
-        )))
+        ))
       })))
 
     grids.analyze()

@@ -42,7 +42,7 @@ public class Example {
 
         deleteOldValidation();
 
-        PointRDD data = new GenerateNonUniformData().generate(100000, 800000, sc.sc());
+        PointRDD data = new GenerateGuassianData().generate(101000, 800000, sc.sc());
 
         data.analyze();
         data.spatialPartitioning(GridType.QUADTREE);
@@ -55,14 +55,14 @@ public class Example {
         long prevCount, nextCount;
         int pruningIteration = 0;
 //        do {
-        List<Integer> levels = Arrays.asList(3, 6, 10);
+        List<Integer> levels = Arrays.asList(6, 7, 8);
         for (Integer level : levels) {
             prevCount = data.countWithoutDuplicates();
             System.out.println("Before # of Points = " + prevCount);
-            nextRdd = OutliersDetectionQ.findOutliers(data, 300, 200, pruningIteration, level);
+            nextRdd = OutliersDetectionQ.findOutliers(data, 300, 300, level, level);
             nextCount = nextRdd.countWithoutDuplicates();
             System.out.println("After # of Points = " + nextCount + "\n");
-            System.out.println("Pruning = " + ((1.0 * prevCount - nextCount)/prevCount*100.0) + "\n");
+            System.out.println("Pruning = " + ((1.0 * prevCount - nextCount) / prevCount * 100.0) + "\n");
             if (prevCount != nextCount)
                 Plotter.visualizeQ(sc, nextRdd, "FilteredData_" + level, true);
         }
@@ -81,7 +81,7 @@ public class Example {
 
         int found = 0;
         List<Point> doubtList = nextRdd.spatialPartitionedRDD.collect();
-        List<Point> ans = OutliersDetection.findOutliersNaive(data, 100, 100);
+        List<Point> ans = OutliersDetectionNaiive.findOutliersNaive(data, 100, 100);
         for (Point p : ans) {
             for (Point x : doubtList) {
                 if (x.getX() == p.getX() && x.getY() == p.getY()) {

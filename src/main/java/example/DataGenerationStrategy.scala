@@ -9,10 +9,13 @@ import org.datasyslab.geospark.spatialRDD.PointRDD
 import scala.util.Random
 
 trait DataGenerationStrategy {
+  val MAX_PARTITIONS_NUMBER = 8
+
   def generate(size: Int, range: Int, sc: SparkContext): PointRDD
 }
 
 case class GenerateUniformData() extends DataGenerationStrategy {
+  
   def generate(size: Int, range: Int, sc: SparkContext): PointRDD = {
     val geometryFactory = new GeometryFactory()
     val xBoundsMin = Random.nextInt(2 * range / 3)
@@ -29,7 +32,7 @@ case class GenerateUniformData() extends DataGenerationStrategy {
               Random.nextDouble * (xBoundsMax - xBoundsMin) + xBoundsMin,
               Random.nextDouble * (yBoundsMax - yBoundsMin) + yBoundsMin
             )),
-        16
+        MAX_PARTITIONS_NUMBER
       ))
   }
 }
@@ -51,7 +54,7 @@ case class GenerateGuassianData() extends DataGenerationStrategy {
               (Random.nextGaussian + 4.0) / 8.0 * (xBoundsMax - xBoundsMin) + xBoundsMin,
               (Random.nextGaussian + 4.0) / 8.0 * (yBoundsMax - yBoundsMin) + yBoundsMin
             )),
-        16
+        MAX_PARTITIONS_NUMBER
       ))
   }
 }
@@ -75,7 +78,7 @@ case class GenerateExponentialData() extends DataGenerationStrategy {
             math
               .log(1 - Random.nextDouble()) / -lambda * (yBoundsMax - yBoundsMin) + yBoundsMin
           )),
-        16
+        MAX_PARTITIONS_NUMBER
       ))
   }
 }
@@ -102,15 +105,15 @@ case class GenerateNonUniformData() extends DataGenerationStrategy {
           if (i + 1 < regionsCntPerAxis || j + 1 < regionsCntPerAxis) {
             Random.nextInt(
               math.min(size / regionsCntPerAxis / 2,
-                       1 +
-                         remainingPoints))
+                1 +
+                  remainingPoints))
           } else {
             remainingPoints
           }
         remainingPoints -= chosenCount
         (xBoundsMin + range * (i + 1) / regionsCntPerAxis,
-         yBoundsMin + range * (j + 1) / regionsCntPerAxis,
-         chosenCount)
+          yBoundsMin + range * (j + 1) / regionsCntPerAxis,
+          chosenCount)
       }
 
     new PointRDD(
@@ -129,7 +132,7 @@ case class GenerateNonUniformData() extends DataGenerationStrategy {
                 ))
           }
         },
-        16
+        MAX_PARTITIONS_NUMBER
       ))
   }
 }
@@ -143,12 +146,13 @@ case class GenerateZipfData(skew: Double) extends DataGenerationStrategy {
       div += 1.0 / math.pow(i, skew)
 
       {
-        i += 1; i - 1
+        i += 1;
+        i - 1
       }
     }
     var sum = 0.0
     i = 1
-    while ({
+    while ( {
       i <= size
     }) {
       val p = (1.0d / math.pow(i, skew)) / div
@@ -156,7 +160,8 @@ case class GenerateZipfData(skew: Double) extends DataGenerationStrategy {
       map.put(sum, i - 1)
 
       {
-        i += 1; i - 1
+        i += 1;
+        i - 1
       }
     }
     map

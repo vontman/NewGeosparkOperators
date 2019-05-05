@@ -6,24 +6,12 @@ import com.vividsolutions.jts.geom.{Envelope, Point}
 import com.vividsolutions.jts.index.quadtree.{Node, NodeBase, Quadtree}
 import org.apache.spark.rdd.RDD
 import org.datasyslab.geospark.enums.{GridType, IndexType}
-import org.datasyslab.geospark.spatialOperator.KNNQuery
 import org.datasyslab.geospark.spatialRDD.PointRDD
 
 import scala.collection.JavaConversions._
+import scala.language.postfixOps
 
 object OutliersDetectionQ {
-
-  def findOutliersNaive(rdd: PointRDD, k: Int, n: Int): java.util.List[Point] = {
-    rdd.buildIndex(IndexType.RTREE, false)
-    rdd.indexedRDD.cache()
-
-    val data = rdd.spatialPartitionedRDD.rdd.cache()
-    println("Executing native outliers detection")
-
-    data.collect().flatMap(point => {
-      KNNQuery.SpatialKnnQuery(rdd, point, k, true).map(p2 => (point.distance(p2), point))
-    }).sortBy(_._1).takeRight(n).map(x => x._2).toList
-  }
 
   def findOutliers(rdd: PointRDD, k: Int, n: Int, iteration_number: Int, levels: Int): PointRDD = {
     val nextLevelQueryRDD: RDD[NodeBase] = expandLevels(levels, rdd)
@@ -40,8 +28,13 @@ object OutliersDetectionQ {
 
     Plotter.plotPartitions(rdd.indexedRDD.sparkContext, partitions, "partitionsPlot_" + iteration_number)
 
-    val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitions, k, n)
-    //println(candidates.take(10).mkString("\n"))
+    val partitionPropsRdd = rdd.rawSpatialRDD.sparkContext.parallelize(partitions, 8)
+      .map(computeLowerUpper(partitions, _, k))
+      .sortBy(p => -p.lower)
+      .cache()
+
+    //    val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitions, k, n)
+    val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitionPropsRdd.collect().toList, k, n)
 
     println("# Partitions after  pruning = " + candidates.size)
 
@@ -75,10 +68,15 @@ object OutliersDetectionQ {
         if (!node.hasChildren) {
           List(node)
         } else {
-          val extraNode = new Node(node.getBounds, 10)
-          extraNode.addAllItems(node.getItems)
-
           if (node.hasItems) {
+            val extraBounds: Envelope = node.getItems.map(item => {
+              new Envelope(item.asInstanceOf[Point].getCoordinate)
+            }).reduce((a, b) => {
+              a.expandToInclude(b)
+              a
+            })
+            val extraNode = new Node(extraBounds, 10)
+            extraNode.addAllItems(node.getItems)
             extraNode :: node.getSubnode.toList.filter(_ != null)
           } else {
             node.getSubnode.toList.filter(_ != null)
@@ -90,11 +88,18 @@ object OutliersDetectionQ {
   }
 
   private def computeCandidatePartitions(allPartitions: List[PartitionProps], k: Int, n: Int): Iterable[PartitionProps] = {
-//    allPartitions.parallelStream().forEach(partition => computeLowerUpper(allPartitions, partion, k))
-    allPartitions.foreach(partition => computeLowerUpper(allPartitions, partition, k))
+    //    //    allPartitions.foreach(partition => computeLowerUpper(allPartitions, partition, k))
+    //
+    //    val futurePartitions = allPartitions.map(p => Future {
+    //      computeLowerUpper(allPartitions, p, k)
+    //    })
+    //    futurePartitions.foreach(f => {
+    //      Await.ready(f, 100 second)
+    //    })
 
     var pointsToTake = n
-    val minDkDist = allPartitions.sortBy(p => -p.lower).takeWhile(p => {
+    //    val minDkDist = allPartitions.sortBy(p => -p.lower).takeWhile(p => {
+    val minDkDist = allPartitions.takeWhile(p => {
       if (pointsToTake > 0) {
         pointsToTake -= p.size
         true
@@ -117,7 +122,7 @@ object OutliersDetectionQ {
     }).toSet
   }
 
-  private def computeLowerUpper(allPartitions: List[PartitionProps], partition: PartitionProps, k: Int): Unit = {
+  private def computeLowerUpper(allPartitions: List[PartitionProps], partition: PartitionProps, k: Int): PartitionProps = {
     var knnVal = k
     partition.lower(
       allPartitions
@@ -148,9 +153,18 @@ object OutliersDetectionQ {
         })
         .map(p => getMaxDist(partition.envelop, p.envelop)).max
     )
+    val ret = new PartitionProps()
+    ret.setEnvelop(new Envelope(partition.envelop))
+    ret.setSize(partition.size)
+    ret.upper(partition.upper)
+    ret.lower(partition.lower)
+    ret
   }
 
   private def getMinDist(env1: Envelope, env2: Envelope): Double = {
+    if (env1.intersects(env2)) {
+      return 0
+    }
     val r = (env1.getMinX, env1.getMinY)
     val rd = (env1.getMaxX, env1.getMaxY)
 

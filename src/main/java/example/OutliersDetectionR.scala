@@ -1,26 +1,13 @@
 package example
 
-import com.vividsolutions.jts.geom.{Envelope, Point}
+import com.vividsolutions.jts.geom.Envelope
 import com.vividsolutions.jts.index.strtree.{AbstractNode, Boundable, STRtree}
 import org.datasyslab.geospark.enums.{GridType, IndexType}
-import org.datasyslab.geospark.spatialOperator.KNNQuery
 import org.datasyslab.geospark.spatialRDD.PointRDD
 
 import scala.collection.JavaConversions._
 
 object OutliersDetectionR {
-
-  def findOutliersNaive(rdd: PointRDD, k: Int, n: Int): java.util.List[Point] = {
-    rdd.buildIndex(IndexType.RTREE, false)
-    rdd.indexedRDD.cache()
-
-    val data = rdd.spatialPartitionedRDD.rdd.cache()
-    println("Executing native outliers detection")
-
-    data.collect().flatMap(point => {
-      KNNQuery.SpatialKnnQuery(rdd, point, k, true).map(p2 => (point.distance(p2), point))
-    }).sortBy(_._1).takeRight(n).map(x => x._2).toList
-  }
 
   def findOutliers(rdd: PointRDD, k: Int, n: Int, iteration_number: Int): PointRDD = {
 
@@ -97,16 +84,16 @@ object OutliersDetectionR {
     allPartitions.filter((currentPartition: PartitionProps) => {
       currentPartition.upper >= minDkDist
     })
-//      .flatMap((currentPartition: PartitionProps) => {
-//      val ret = new util.HashSet[PartitionProps]()
-//      ret.addAll(
-//        allPartitions
-//          .filter(p => !p.equals(currentPartition))
-//          .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
-//      )
-//      ret.add(currentPartition)
-//      ret
-//    }).toSet
+    //      .flatMap((currentPartition: PartitionProps) => {
+    //      val ret = new util.HashSet[PartitionProps]()
+    //      ret.addAll(
+    //        allPartitions
+    //          .filter(p => !p.equals(currentPartition))
+    //          .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
+    //      )
+    //      ret.add(currentPartition)
+    //      ret
+    //    }).toSet
   }
 
   private def computeLowerUpper(allPartitions: List[PartitionProps], partition: PartitionProps, k: Int): Unit = {
