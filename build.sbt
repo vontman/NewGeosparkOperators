@@ -3,7 +3,7 @@ import sbt.Keys.{libraryDependencies, version}
 
 lazy val root = (project in file(".")).
   settings(
-    name := "GroupNearestNeighbourWithGeoSpark",
+    name := "NewGeosparkOperators",
 
     version := "0.1.0",
 
