@@ -5,9 +5,6 @@ import java.awt.image.BufferedImage
 import java.nio.file.Paths
 
 import com.vividsolutions.jts.geom.{Coordinate, Envelope, GeometryFactory}
-import com.vividsolutions.jts.index.SpatialIndex
-import com.vividsolutions.jts.index.quadtree.{NodeBase, Quadtree}
-import com.vividsolutions.jts.index.strtree.STRtree
 import org.apache.spark.api.java.JavaSparkContext
 import org.datasyslab.geospark.spatialRDD.{PointRDD, PolygonRDD}
 import org.datasyslab.geosparkviz.core.ImageGenerator
@@ -39,7 +36,12 @@ object Plotter {
     imageGenerator.SaveRasterImageAsLocalFile(afterImage, scatterOutput, ImageType.PNG)
   }
 
-  def visualizeR(sc: JavaSparkContext, pointRDD: PointRDD, plotName: String, withBoarders: Boolean = true): Unit = {
+  def visualize(sc: JavaSparkContext,
+                candidatePoints: PointRDD,
+                plotName: String,
+                totalPlotBounds: Envelope,
+                filteredPoints: PointRDD = null,
+                partitions: List[PartitionProps] = null): Unit = {
 
     val scatterOutput = Paths.get("visualization", plotName).toString
 
@@ -47,97 +49,68 @@ object Plotter {
     val resX = 300
     val resY = 300
 
-    val grids = new PolygonRDD(
-      pointRDD.indexedRDD.rdd.filter((index: SpatialIndex) => {
-        index.asInstanceOf[STRtree].getRoot.getBounds != null
-      }).map((index: SpatialIndex) => {
-        val env = index.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope]
+    var grids: PolygonRDD = null
+    if (partitions != null) {
 
-        geometryFactory.createPolygon(geometryFactory.createLinearRing(Array(
+      grids = new PolygonRDD(sc.parallelize(partitions.map(_.envelop).map(env => {
+        geometryFactory.createPolygon(Array(
           new Coordinate(env.getMinX, env.getMinY),
           new Coordinate(env.getMinX, env.getMaxY),
           new Coordinate(env.getMaxX, env.getMaxY),
           new Coordinate(env.getMaxX, env.getMinY),
           new Coordinate(env.getMinX, env.getMinY)
-        )))
-      }).cache())
+        ))
+      })))
 
-    grids.analyze()
-
-    val dataOperator = new ScatterPlot(resX, resY, pointRDD.boundaryEnvelope, false, false)
-    dataOperator.CustomizeColor(255, 255, 255, 255, Color.RED, true)
-    dataOperator.Visualize(sc, pointRDD)
-
-    val boundsOperator = new ScatterPlot(resX, resY, grids.boundaryEnvelope, false, false)
-    boundsOperator.CustomizeColor(255, 255, 255, 255, Color.GREEN, true)
-    boundsOperator.Visualize(sc, grids)
-
-
-    val afterImage = new BufferedImage(resX, resY, BufferedImage.TYPE_INT_ARGB)
-    val afterImageG = afterImage.getGraphics
-    afterImageG.setColor(Color.BLACK)
-    afterImageG.fillRect(0, 0, resX, resY)
-    afterImageG.drawImage(dataOperator.rasterImage, 0, 0, null)
-
-    if (withBoarders) {
-      afterImageG.drawImage(boundsOperator.rasterImage, 0, 0, null)
+      grids.analyze()
     }
 
-    val imageGenerator = new ImageGenerator()
-    imageGenerator.SaveRasterImageAsLocalFile(afterImage, scatterOutput, ImageType.PNG)
-  }
 
-  def visualizeQ(sc: JavaSparkContext, pointRDD: PointRDD, plotName: String, withBoarders: Boolean = true): Unit = {
-
-    val scatterOutput = Paths.get("visualization", plotName).toString
-
-
-    val resX = 300
-    val resY = 300
-
-    val grids = new PolygonRDD(
-      pointRDD.indexedRDD.rdd.filter((index: SpatialIndex) => {
-        index.asInstanceOf[Quadtree].getRoot.asInstanceOf[NodeBase].hasChildren
-      }).map((index: SpatialIndex) => {
-        val env = new Envelope()
-        for (node <- index.asInstanceOf[Quadtree].getRoot.getSubnode) {
-          if (node != null) {
-            if (env.isNull) {
-              env.init(node.getEnvelope)
-            } else {
-              env.expandToInclude(node.getEnvelope)
-            }
-          }
+    val plotBounds = {
+      if (totalPlotBounds == null) {
+        val env = new Envelope(candidatePoints.boundaryEnvelope)
+        if (filteredPoints != null) {
+          env.expandToInclude(filteredPoints.boundaryEnvelope)
         }
+        if (partitions != null) {
+          partitions.map(_.envelop).foreach(env.expandToInclude)
+        }
+        env
+      } else {
+        totalPlotBounds
+      }
+    }
 
-        val geometryFactory = new GeometryFactory()
-        geometryFactory.createPolygon(geometryFactory.createLinearRing(Array(
-          new Coordinate(env.getMinX, env.getMinY),
-          new Coordinate(env.getMinX, env.getMaxY),
-          new Coordinate(env.getMaxX, env.getMaxY),
-          new Coordinate(env.getMaxX, env.getMinY),
-          new Coordinate(env.getMinX, env.getMinY)
-        )))
-      }).cache())
+    val candidatesOperator = new ScatterPlot(resX, resY, plotBounds, false, false)
+    candidatesOperator.CustomizeColor(Color.CYAN.getRed, Color.CYAN.getGreen, Color.CYAN.getBlue, 255, Color.BLUE, false)
+    candidatesOperator.Visualize(sc, candidatePoints)
 
-    grids.analyze()
+    var boundsOperator: ScatterPlot = null
+    if (partitions != null) {
+      boundsOperator = new ScatterPlot(resX, resY, plotBounds, false, false)
+      boundsOperator.CustomizeColor(Color.RED.getRed, Color.RED.getGreen, Color.RED.getBlue, 255, Color.RED, false)
+      boundsOperator.Visualize(sc, grids)
+    }
 
-    val dataOperator = new ScatterPlot(resX, resY, pointRDD.boundaryEnvelope, false, false)
-    dataOperator.CustomizeColor(255, 255, 255, 255, Color.RED, true)
-    dataOperator.Visualize(sc, pointRDD)
-
-    val boundsOperator = new ScatterPlot(resX, resY, grids.boundaryEnvelope, false, false)
-    boundsOperator.CustomizeColor(255, 255, 255, 255, Color.GREEN, true)
-    boundsOperator.Visualize(sc, grids)
+    var filteredOperator: ScatterPlot = null
+    if (filteredPoints != null) {
+      filteredOperator = new ScatterPlot(resX, resY, plotBounds, false, false)
+      filteredOperator.CustomizeColor(Color.YELLOW.getRed, Color.YELLOW.getGreen, Color.YELLOW.getBlue, 255, Color.GREEN, false)
+      filteredOperator.Visualize(sc, filteredPoints)
+    }
 
 
     val afterImage = new BufferedImage(resX, resY, BufferedImage.TYPE_INT_ARGB)
     val afterImageG = afterImage.getGraphics
     afterImageG.setColor(Color.BLACK)
     afterImageG.fillRect(0, 0, resX, resY)
-    afterImageG.drawImage(dataOperator.rasterImage, 0, 0, null)
+    afterImageG.drawImage(candidatesOperator.rasterImage, 0, 0, null)
 
-    if (withBoarders) {
+    if (filteredPoints != null) {
+      afterImageG.drawImage(filteredOperator.rasterImage, 0, 0, null)
+    }
+
+    if (partitions != null) {
       afterImageG.drawImage(boundsOperator.rasterImage, 0, 0, null)
     }
 

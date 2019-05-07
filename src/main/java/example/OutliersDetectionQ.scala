@@ -9,85 +9,148 @@ import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialRDD.PointRDD
 
 import scala.collection.JavaConversions._
+import scala.collection.mutable
 import scala.language.postfixOps
 
 object OutliersDetectionQ {
 
-  def findOutliers(rdd: PointRDD, k: Int, n: Int, iteration_number: Int, levels: Int): PointRDD = {
-    val nextLevelQueryRDD: RDD[NodeBase] = expandLevels(levels, rdd)
+  var originalBounds: Envelope = _
 
-    val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: NodeBase) => {
+  def findOutliers(inputRDD: PointRDD, k: Int, n: Int, iteration_number: Int, maxNumberOfPartitions: Int): PointRDD = {
+    if (originalBounds == null) {
+      originalBounds = inputRDD.boundaryEnvelope
+    }
+    val partitions: RDD[NodeBase] = expandLevels(inputRDD, maxNumberOfPartitions)
+    assert(new PointRDD(partitions.flatMap(_.getAllItems).asInstanceOf[RDD[Point]]).countWithoutDuplicates() == inputRDD.countWithoutDuplicates())
+
+    println("# Partitions before pruning = " + partitions.count())
+
+    val partitionPropsRDD = partitions.map((node: NodeBase) => {
       val partitionProps = new PartitionProps()
       partitionProps.setSize(node.getPointsCount)
       partitionProps.setEnvelop(node.asInstanceOf[Node].getEnvelope)
 
       partitionProps
-    }).collect().toList
+    }).cache()
 
-    println("# Partitions before pruning = " + partitions.size)
+    val partitionsList = partitionPropsRDD.collect().toList
 
-    Plotter.plotPartitions(rdd.indexedRDD.sparkContext, partitions, "partitionsPlot_" + iteration_number)
-
-    val partitionPropsRdd = rdd.rawSpatialRDD.sparkContext.parallelize(partitions, 8)
-      .map(computeLowerUpper(partitions, _, k))
-      .sortBy(p => -p.lower)
-      .cache()
+    val partitionPropsRdd = partitionPropsRDD.map(computeLowerUpper(partitionsList, _, k)).sortBy(-_.lower).cache()
 
     //    val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitions, k, n)
-    val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitionPropsRdd.collect().toList, k, n)
+    val candidates = computeCandidatePartitions(partitionPropsRdd.collect().toList, k, n)
 
     println("# Partitions after  pruning = " + candidates.size)
 
-    val filteredRDD = nextLevelQueryRDD.filter((node: NodeBase) => {
+    val candidatePointsRDD: RDD[Point] = partitions.filter((node: NodeBase) => {
       val currentPartition = new PartitionProps
       currentPartition.setEnvelop(node.asInstanceOf[Node].getEnvelope)
-      candidates.exists(candidate => candidate.equals(currentPartition))
+      candidates.contains(currentPartition)
     }).mapPartitions((indices: Iterator[NodeBase]) => {
       indices.flatMap((node: NodeBase) => {
         node.getAllItems
       })
     })
 
-    val newRdd = new PointRDD(filteredRDD)
-    newRdd.analyze()
+    val filteredPointsRDD: RDD[Point] = partitions.filter((node: NodeBase) => {
+      val currentPartition = new PartitionProps
+      currentPartition.setEnvelop(node.asInstanceOf[Node].getEnvelope)
+      !candidates.contains(currentPartition)
+    }).mapPartitions((indices: Iterator[NodeBase]) => {
+      indices.flatMap((node: NodeBase) => {
+        node.getAllItems
+      })
+    })
 
-    newRdd.spatialPartitioning(GridType.QUADTREE)
-    newRdd.buildIndex(IndexType.QUADTREE, true)
-    newRdd.indexedRDD.rdd.cache()
+    val candidatePoints = new PointRDD(candidatePointsRDD)
+    val filteredPoints = new PointRDD(filteredPointsRDD)
 
-    newRdd
+    Array(candidatePoints, filteredPoints).foreach(rdd => {
+      rdd.analyze()
+
+      rdd.spatialPartitioning(GridType.RTREE)
+      rdd.buildIndex(IndexType.QUADTREE, true)
+      rdd.indexedRDD.rdd.cache()
+
+    })
+
+    assert(candidatePoints.rawSpatialRDD.count() + filteredPoints.rawSpatialRDD.count() == inputRDD.rawSpatialRDD.count())
+
+    Plotter.visualize(inputRDD.indexedRDD.sparkContext, inputRDD, "Iteration_" + iteration_number + "_A", originalBounds)
+
+    Plotter.visualize(candidatePoints.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_B", originalBounds)
+
+    Plotter.visualize(candidatePoints.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_C", originalBounds, filteredPoints)
+
+    Plotter.visualize(candidatePoints.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_D", originalBounds, filteredPoints, partitionsList)
+
+    candidatePoints
   }
 
-  private def expandLevels(levels: Int, rdd: PointRDD): RDD[NodeBase] = {
-    var nextLevelGrids = rdd.indexedRDD.rdd
+  private def expandLevels(rdd: PointRDD, maxNumberOfPartitions: Int): RDD[NodeBase] = {
+    val partitionsPerIndex = math.ceil((maxNumberOfPartitions * 1.0) / rdd.getPartitioner.numPartitions)
+
+    //    var nextLevelGrids = rdd.indexedRDD.rdd
+    //      .map(_.asInstanceOf[Quadtree].getRoot)
+    //      .map(_.asInstanceOf[NodeBase])
+    //      .filter(_.getPointsCount > 0)
+    //    for (_ <- 0 to levels) {
+    //      nextLevelGrids = nextLevelGrids.flatMap((node: NodeBase) => {
+    //        if (!node.hasChildren) {
+    //          List(node)
+    //        } else {
+    //          if (node.hasItems) {
+    //            val extraBounds: Envelope = node.getItems.map(item => {
+    //              new Envelope(item.asInstanceOf[Point].getCoordinate)
+    //            }).reduce((a, b) => {
+    //              a.expandToInclude(b)
+    //              a
+    //            })
+    //            val extraNode = new Node(extraBounds, 10)
+    //            extraNode.setItems(node.getItems)
+    //            extraNode :: node.getSubnode.toList.filter(_ != null)
+    //          } else {
+    //            node.getSubnode.toList.filter(_ != null)
+    //          }
+    //        }
+    //      })
+    //    }
+    //    nextLevelGrids.cache()
+
+    rdd.indexedRDD.rdd
       .map(_.asInstanceOf[Quadtree].getRoot)
-      .map(_.asInstanceOf[NodeBase])
       .filter(_.getPointsCount > 0)
-    for (_ <- 0 to levels) {
-      nextLevelGrids = nextLevelGrids.flatMap((node: NodeBase) => {
-        if (!node.hasChildren) {
-          List(node)
-        } else {
-          if (node.hasItems) {
-            val extraBounds: Envelope = node.getItems.map(item => {
-              new Envelope(item.asInstanceOf[Point].getCoordinate)
-            }).reduce((a, b) => {
-              a.expandToInclude(b)
-              a
-            })
-            val extraNode = new Node(extraBounds, 10)
-            extraNode.addAllItems(node.getItems)
-            extraNode :: node.getSubnode.toList.filter(_ != null)
+      .flatMap((root: NodeBase) => {
+        val expander = mutable.PriorityQueue(root)(Ordering.by(node => node.asInstanceOf[Node].getEnvelope.getArea))
+
+        var extraNodes: List[NodeBase] = List()
+        var leafNodes: List[NodeBase] = List()
+
+        while (expander.size + leafNodes.size + extraNodes.size < partitionsPerIndex && expander.nonEmpty) {
+          val top = expander.dequeue()
+          if (!top.hasChildren) {
+            leafNodes ::= top
           } else {
-            node.getSubnode.toList.filter(_ != null)
+            top.getSubnode.filter(_ != null).foreach(expander.enqueue(_))
+
+            if (top.hasItems) {
+              val extraBounds: Envelope = top.getItems.map(item => {
+                new Envelope(item.asInstanceOf[Point].getCoordinate)
+              }).reduce((a, b) => {
+                a.expandToInclude(b)
+                a
+              })
+              val extraNode = new Node(extraBounds, 10)
+              extraNode.setItems(top.getItems)
+              extraNodes ::= extraNode
+            }
           }
         }
-      })
-    }
-    nextLevelGrids.cache()
+        expander.toList ::: extraNodes ::: leafNodes
+      }).cache()
   }
 
-  private def computeCandidatePartitions(allPartitions: List[PartitionProps], k: Int, n: Int): Iterable[PartitionProps] = {
+  private def computeCandidatePartitions(allPartitions: List[PartitionProps], k: Int, n: Int) = {
     //    //    allPartitions.foreach(partition => computeLowerUpper(allPartitions, partition, k))
     //
     //    val futurePartitions = allPartitions.map(p => Future {
@@ -193,6 +256,9 @@ object OutliersDetectionQ {
   }
 
   private def getMaxDist(env1: Envelope, env2: Envelope): Double = {
+    if (env1.contains(env2) || env2.contains(env1)) {
+      return 0
+    }
     val r = (env1.getMinX, env1.getMinY)
     val rd = (env1.getMaxX, env1.getMaxY)
 

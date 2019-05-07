@@ -53,8 +53,7 @@ case class GenerateGuassianData() extends DataGenerationStrategy {
             new Coordinate(
               (Random.nextGaussian + 4.0) / 8.0 * (xBoundsMax - xBoundsMin) + xBoundsMin,
               (Random.nextGaussian + 4.0) / 8.0 * (yBoundsMax - yBoundsMin) + yBoundsMin
-            )),
-        MAX_PARTITIONS_NUMBER
+            ))
       ))
   }
 }

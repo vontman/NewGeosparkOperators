@@ -33,8 +33,6 @@
  */
 package com.vividsolutions.jts.index.strtree;
 
-import com.vividsolutions.jts.index.strtree.AbstractSTRtree;
-
 import java.io.Serializable;
 import java.util.*;
 
