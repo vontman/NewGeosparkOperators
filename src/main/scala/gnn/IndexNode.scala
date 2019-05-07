@@ -68,7 +68,7 @@ case class QuadtreeNode(node: NodeBase) extends IndexNode{
       }
 
       val tmp = new com.vividsolutions.jts.index.quadtree.Node(env, 1)
-      tmp.addAllItems(node.getItems)
+      tmp.setItems(node.getItems)
       IndexNode(tmp) :: children
     } else {
       children
