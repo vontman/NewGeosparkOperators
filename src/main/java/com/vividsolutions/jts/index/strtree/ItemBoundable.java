@@ -35,7 +35,10 @@ package com.vividsolutions.jts.index.strtree;
 
 import com.vividsolutions.jts.geom.Envelope;
 import com.vividsolutions.jts.geom.Point;
+
 import java.io.Serializable;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Boundable wrapper for a non-Boundable spatial object. Used internally by
@@ -44,34 +47,41 @@ import java.io.Serializable;
  * @version 1.7
  */
 public class ItemBoundable implements Boundable, Serializable {
-  private Object bounds;
-  private Object item;
+    private Object bounds;
+    private Object item;
 
-  public ItemBoundable(Object bounds, Object item) {
-    this.bounds = bounds;
-    this.item = item;
-  }
+    public ItemBoundable(Object bounds, Object item) {
+        this.bounds = bounds;
+        this.item = item;
+    }
 
-  public Object getBounds() {
-    return bounds;
-  }
+    public Object getBounds() {
+        return bounds;
+    }
 
-  @Override
-  public int pointsCount() {
-    return 1;
-  }
+    @Override
+    public int pointsCount() {
+        return 1;
+    }
 
-  @Override
-  public double averageX() {
-    if (item instanceof Point) return ((Point)item).getX();
-    return ((Envelope)item).getMinX();
-  }
+    @Override
+    public List<Point> getPoints() {
+        return Collections.singletonList((Point) item);
+    }
 
-  @Override
-  public double averageY() {
-    if (item instanceof Point) return ((Point)item).getY();
-    return ((Envelope)item).getMinY();
-  }
+    @Override
+    public double averageX() {
+        if (item instanceof Point) return ((Point) item).getX();
+        return ((Envelope) item).getMinX();
+    }
 
-  public Object getItem() { return item; }
+    @Override
+    public double averageY() {
+        if (item instanceof Point) return ((Point) item).getY();
+        return ((Envelope) item).getMinY();
+    }
+
+    public Object getItem() {
+        return item;
+    }
 }

@@ -32,6 +32,8 @@
  *     www.vividsolutions.com
  */
 package com.vividsolutions.jts.index.strtree;
+
+import com.vividsolutions.jts.geom.Point;
 import com.vividsolutions.jts.util.Assert;
 
 import java.io.Serializable;
@@ -43,136 +45,145 @@ import java.util.List;
  * <ul>
  * <li>empty
  * <li>an <i>interior node</i> containing child {@link AbstractNode}s
- * <li>a <i>leaf node</i> containing data items ({@link ItemBoundable}s). 
+ * <li>a <i>leaf node</i> containing data items ({@link ItemBoundable}s).
  * </ul>
  * A node stores the bounds of its children, and its level within the index tree.
  *
  * @version 1.7
  */
+
 public abstract class AbstractNode implements Boundable, Serializable {
-  /**
-   * 
-   */
-  private static final long serialVersionUID = 6493722185909573708L;
-  
-  private ArrayList childBoundables = new ArrayList();
-  private Object bounds = null;
-  private int level;
-  private int pointsCount = 0;
-  private double sumX = 0;
-  private double sumY = 0;
+    /**
+     *
+     */
+    private static final long serialVersionUID = 6493722185909573708L;
 
-  /**
-   * Default constructor required for serialization.
-   */
-  public AbstractNode() {
-  }
+    private ArrayList childBoundables = new ArrayList();
+    private Object bounds = null;
+    private int level;
+    private int pointsCount = 0;
+    private double sumX = 0;
+    private double sumY = 0;
 
-  public int pointsCount() {
-    return pointsCount;
-  }
-
-  @Override
-  public double averageX() {
-    return sumX / pointsCount;
-  }
-
-  @Override
-  public double averageY() {
-    return sumY / pointsCount;
-  }
-
-  /**
-   * Constructs an AbstractNode at the given level in the tree
-   * @param level 0 if this node is a leaf, 1 if a parent of a leaf, and so on; the
-   * root node will have the highest level
-   */
-  public AbstractNode(int level) {
-    this.level = level;
-  }
-
-  /**
-   * Returns either child {@link AbstractNode}s, or if this is a leaf node, real data (wrapped
-   * in {@link ItemBoundable}s).
-   */
-  public List getChildBoundables() {
-    return childBoundables;
-  }
-
-  public void setChildBoundables(ArrayList childBoundables) {
-    this.childBoundables = childBoundables;
-    pointsCount = 0;
-    sumX = 0;
-    sumY = 0;
-    childBoundables.forEach(node -> {
-      Boundable bnode = (Boundable) node;
-      pointsCount += bnode.pointsCount();
-      sumX += bnode.averageX() * bnode.pointsCount();
-      sumY += bnode.averageY() * bnode.pointsCount();
-    });
-  }
-
-  /**
-   * Returns a representation of space that encloses this Boundable,
-   * preferably not much bigger than this Boundable's boundary yet fast to
-   * test for intersection with the bounds of other Boundables. The class of
-   * object returned depends on the subclass of AbstractSTRtree.
-   *
-   * @return an Envelope (for STRtrees), an Interval (for SIRtrees), or other
-   *         object (for other subclasses of AbstractSTRtree)
-   * @see AbstractSTRtree.IntersectsOp
-   */
-  protected abstract Object computeBounds();
-
-  /**
-   * Gets the bounds of this node
-   * 
-   * @return the object representing bounds in this index
-   */
-  public Object getBounds() {
-    if (bounds == null) {
-      bounds = computeBounds();
+    /**
+     * Default constructor required for serialization.
+     */
+    public AbstractNode() {
     }
-    return bounds;
-  }
 
-  /**
-   * Returns 0 if this node is a leaf, 1 if a parent of a leaf, and so on; the
-   * root node will have the highest level
-   */
-  public int getLevel() {
-    return level;
-  }
+    public int pointsCount() {
+        return pointsCount;
+    }
 
-  /**
-   * Gets the count of the {@link Boundable}s at this node.
-   * 
-   * @return the count of boundables at this node
-   */
-  public int size()
-  {
-    return childBoundables.size();
-  }
-  
-  /**
-   * Tests whether there are any {@link Boundable}s at this node.
-   * 
-   * @return true if there are boundables at this node
-   */
-  public boolean isEmpty()
-  {
-    return childBoundables.isEmpty();
-  }
-  
-  /**
-   * Adds either an AbstractNode, or if this is a leaf node, a data object
-   * (wrapped in an ItemBoundable)
-   */
-  public void addChildBoundable(Boundable childBoundable) {
-    Assert.isTrue(bounds == null);
-    childBoundables.add(childBoundable);
-    pointsCount += childBoundable.pointsCount();
-    sumX += childBoundable.averageX() * childBoundable.pointsCount();
-    sumY += childBoundable.averageY() * childBoundable.pointsCount();
-  }
+    @Override
+    public double averageX() {
+        return sumX / pointsCount;
+    }
+
+    @Override
+    public double averageY() {
+        return sumY / pointsCount;
+    }
+
+    @Override
+    public List<Point> getPoints() {
+        List<Point> pts = new ArrayList<>();
+        for (Object child : getChildBoundables()) {
+            pts.addAll(((Boundable) child).getPoints());
+        }
+        return pts;
+    }
+
+    /**
+     * Constructs an AbstractNode at the given level in the tree
+     *
+     * @param level 0 if this node is a leaf, 1 if a parent of a leaf, and so on; the
+     *              root node will have the highest level
+     */
+    public AbstractNode(int level) {
+        this.level = level;
+    }
+
+    /**
+     * Returns either child {@link AbstractNode}s, or if this is a leaf node, real data (wrapped
+     * in {@link ItemBoundable}s).
+     */
+    public List getChildBoundables() {
+        return childBoundables;
+    }
+
+    public void setChildBoundables(ArrayList childBoundables) {
+        this.childBoundables = childBoundables;
+        pointsCount = 0;
+        sumX = 0;
+        sumY = 0;
+        childBoundables.forEach(node -> {
+            Boundable bnode = (Boundable) node;
+            pointsCount += bnode.pointsCount();
+            sumX += bnode.averageX() * bnode.pointsCount();
+            sumY += bnode.averageY() * bnode.pointsCount();
+        });
+    }
+
+    /**
+     * Returns a representation of space that encloses this Boundable,
+     * preferably not much bigger than this Boundable's boundary yet fast to
+     * test for intersection with the bounds of other Boundables. The class of
+     * object returned depends on the subclass of AbstractSTRtree.
+     *
+     * @return an Envelope (for STRtrees), an Interval (for SIRtrees), or other
+     * object (for other subclasses of AbstractSTRtree)
+     * @see AbstractSTRtree.IntersectsOp
+     */
+    protected abstract Object computeBounds();
+
+    /**
+     * Gets the bounds of this node
+     *
+     * @return the object representing bounds in this index
+     */
+    public Object getBounds() {
+        if (bounds == null) {
+            bounds = computeBounds();
+        }
+        return bounds;
+    }
+
+    /**
+     * Returns 0 if this node is a leaf, 1 if a parent of a leaf, and so on; the
+     * root node will have the highest level
+     */
+    public int getLevel() {
+        return level;
+    }
+
+    /**
+     * Gets the count of the {@link Boundable}s at this node.
+     *
+     * @return the count of boundables at this node
+     */
+    public int size() {
+        return childBoundables.size();
+    }
+
+    /**
+     * Tests whether there are any {@link Boundable}s at this node.
+     *
+     * @return true if there are boundables at this node
+     */
+    public boolean isEmpty() {
+        return childBoundables.isEmpty();
+    }
+
+    /**
+     * Adds either an AbstractNode, or if this is a leaf node, a data object
+     * (wrapped in an ItemBoundable)
+     */
+    public void addChildBoundable(Boundable childBoundable) {
+        Assert.isTrue(bounds == null);
+        childBoundables.add(childBoundable);
+        pointsCount += childBoundable.pointsCount();
+        sumX += childBoundable.averageX() * childBoundable.pointsCount();
+        sumY += childBoundable.averageY() * childBoundable.pointsCount();
+    }
 }
