@@ -3,15 +3,13 @@ package gnn
 import java.io.{File, PrintWriter}
 
 import com.bizo.mighty.csv.CSVDictWriter
-import com.vividsolutions.jts.geom.{Coordinate, GeometryFactory, Point}
+import com.vividsolutions.jts.geom.{GeometryFactory, Point}
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.serializer.KryoSerializer
-import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{SparkConf, SparkContext}
-import org.datasyslab.geospark.enums.{FileDataSplitter, IndexType}
+import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.geometryObjects.Circle
 import org.datasyslab.geospark.spatialOperator.RangeQuery
-import org.datasyslab.geospark.spatialRDD.PointRDD
 import org.datasyslab.geosparkviz.core.Serde.GeoSparkVizKryoRegistrator
 import utils._
 
@@ -67,8 +65,10 @@ class GNNBenchmark(sparkContext: SparkContext,
       "after_pruning",
       "pruning_percentage",
       "total_time"
-    ) ++ (0 until 20).map(i => s"level_${i}_time") ++ (0 until 20).map(i =>
-      s"level_${i}_pruning")
+    ) ++
+      (1 until 20).map(i => s"level_${i}_time") ++
+      (1 until 20).map(i => s"level_${i}_querybounds") ++
+      (1 until 20).map(i => s"level_${i}_pruning")
 
     val defLog = headers.map(_ -> "0").toMap
 
@@ -100,7 +100,7 @@ class GNNBenchmark(sparkContext: SparkContext,
       val solverTimeOuts = Array.fill(solvers.size)(0)
 
       for {
-        _ <- 1 to iterationsCount
+        iter <- 1 to iterationsCount
         queryGenerationStrategy <- queryGenerationStrategies
         inputGenerationStrategy <- inputGenerationStrategies
         id = Random.nextInt(Int.MaxValue)
@@ -158,6 +158,7 @@ class GNNBenchmark(sparkContext: SparkContext,
           // invoke garbage collector
           runtime.gc()
 
+          println(s"Starting $iter/$iterationsCount $solverName ${queryGenerationStrategy.getClass.getSimpleName}")
           val t0 = System.currentTimeMillis()
           val (logs, res, timeElapsed) = runWithTimeout(TIMEOUT) {
             val res = solver.solve(geometryFactory,
@@ -215,7 +216,7 @@ class GNNBenchmark(sparkContext: SparkContext,
             println("Drawing the " + solverName + " Image")
             Visualization.buildScatterPlotWithResult(
               sparkContext,
-              List(dataSpatialRDD, querySpatialRDD),
+              List(querySpatialRDD, dataSpatialRDD),
               res._1,
               fileBaseName +
                 solverName + "_result")
@@ -285,10 +286,11 @@ object Benchmark {
 
     val sparkContext = new SparkContext(conf)
     val runId = System.currentTimeMillis()
+//    val runId = "benchmark_qtree_rtree_200k_300k_500k_1m"
 
     val benchmark = new GNNBenchmark(
       sparkContext,
-      visualizeSolution = true,
+      visualizeSolution = false,
       visualizeResult = true,
       outputPath = System.getProperty("user.dir") +
         "/target/gnn/" + runId + "/"
@@ -302,15 +304,17 @@ object Benchmark {
 //        (200000, 200000, 800000, 30),
 //        (10000, 10000, 800000, 30),
 //          (20000, 20000, 800000, 30),
-        (200000, 200000, 800000, 3)
-//        (1000000, 1000000, 800000, 5)
+        (100000, 100000, 800000, 10),
+        (200000, 200000, 800000, 10),
+          (300000, 300000, 800000, 10),
+          (500000, 500000, 800000, 10)
       ),
       inputGenerationStrategies = List(GenerateUniformData()),
       queryGenerationStrategies = List(
         GenerateUniformData(),
         GenerateGuassianData(),
-//        GenerateNonUniformData(),
-//        GenerateExponentialData(),
+        GenerateNonUniformData(),
+        GenerateExponentialData(),
 //        GenerateZipfData(.8),
         GenerateZipfData(.5)
 //        GenerateZipfData(.3)
@@ -318,7 +322,9 @@ object Benchmark {
       solvers = List(
         //                      (GNNApprox, "ApproxGNN"),
 //                  (NaiveGNN, "GNN_Naive"),
-        (GNNWithPruning, "GNN_Pruning")
+//        (GNNWithPruning, "GNN_Pruning")
+          (GNNWithPruning(GridType.QUADTREE, IndexType.QUADTREE), "GNN_Pruning_quadtree"),
+            (GNNWithPruning(GridType.RTREE, IndexType.RTREE), "GNN_Pruning_rtree")
       )
     )
 
