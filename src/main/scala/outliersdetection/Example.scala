@@ -2,6 +2,7 @@ package outliersdetection
 
 import java.io.File
 
+import com.vividsolutions.jts.geom.Point
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.api.java.JavaSparkContext
@@ -66,15 +67,15 @@ object Example {
     data.spatialPartitioning(GridType.RTREE)
     data.buildIndex(IndexType.QUADTREE, true)
     data.indexedRDD.cache
-    var found = 0
-    val doubtList = nextRdd.spatialPartitionedRDD.collect
-    val ans = OutliersDetectionNaiive.findOutliersNaive(data, 100, 100)
+    var found: Int = 0
+    val doubtList = nextRdd.spatialPartitionedRDD.collect()
+    val ans: List[Point] = OutliersDetectionNaiive.findOutliersNaive(data, 100, 100)
     for (p <- ans) {
       for (x <- doubtList) {
-        if ((x.getX eq p.getX) && (x.getY eq p.getY)) found += 1
+        if ((x.getX == p.getX) && (x.getY == p.getY)) found += 1
       }
     }
-    System.out.println(if (ans.size eq found) "VALID SOLUTION"
+    System.out.println(if (ans.size == found) "VALID SOLUTION"
     else "INVALID SOLUTION")
     val solutionRdd = new PointRDD(sc.parallelize(ans))
     solutionRdd.analyze

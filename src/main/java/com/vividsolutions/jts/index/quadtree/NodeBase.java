@@ -234,17 +234,6 @@ public abstract class NodeBase implements Serializable {
         return maxSubDepth + 1;
     }
 
-    public int getPointsCount() {
-        if (pointsCount == -1) {
-            pointsCount = items.size();
-            for (int i = 0; i < 4; i++) {
-                if (subnode[i] != null)
-                    pointsCount += subnode[i].getPointsCount();
-            }
-        }
-        return pointsCount;
-    }
-
     public int size() {
         if (pointsCount != -1) return pointsCount;
 

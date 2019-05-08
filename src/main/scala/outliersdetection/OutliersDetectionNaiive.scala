@@ -9,7 +9,7 @@ import scala.collection.JavaConversions._
 import scala.language.postfixOps
 
 object OutliersDetectionNaiive {
-  def findOutliersNaive(rdd: PointRDD, k: Int, n: Int): java.util.List[Point] = {
+  def findOutliersNaive(rdd: PointRDD, k: Int, n: Int): List[Point] = {
     rdd.buildIndex(IndexType.RTREE, false)
     rdd.indexedRDD.cache()
 

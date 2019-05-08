@@ -42,7 +42,7 @@ libraryDependencies ++= Seq(
   "org.datasyslab" % "geospark" % GeoSparkVersion,
   "org.datasyslab" % "geospark-sql_".concat(SparkCompatibleVersion) % GeoSparkVersion,
   "org.datasyslab" % "geospark-viz" % GeoSparkVersion
-).map(_.exclude("com.vividsolutions", "*"))
+)
 
 assemblyMergeStrategy in assembly := {
   case PathList("org.datasyslab", "geospark", xs@_*) => MergeStrategy.first

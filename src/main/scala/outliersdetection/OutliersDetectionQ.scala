@@ -28,7 +28,7 @@ object OutliersDetectionQ {
 
     val partitionPropsRDD = partitions.map((node: NodeBase) => {
       val partitionProps = new PartitionProps()
-      partitionProps.setSize(node.getPointsCount)
+      partitionProps.setSize(node.size)
       partitionProps.setEnvelop(node.asInstanceOf[Node].getEnvelope)
 
       partitionProps
@@ -94,7 +94,7 @@ object OutliersDetectionQ {
     //    var nextLevelGrids = rdd.indexedRDD.rdd
     //      .map(_.asInstanceOf[Quadtree].getRoot)
     //      .map(_.asInstanceOf[NodeBase])
-    //      .filter(_.getPointsCount > 0)
+    //      .filter(_.size > 0)
     //    for (_ <- 0 to levels) {
     //      nextLevelGrids = nextLevelGrids.flatMap((node: NodeBase) => {
     //        if (!node.hasChildren) {
@@ -120,7 +120,7 @@ object OutliersDetectionQ {
 
     rdd.indexedRDD.rdd
       .map(_.asInstanceOf[Quadtree].getRoot)
-      .filter(_.getPointsCount > 0)
+      .filter(_.size > 0)
       .flatMap((root: NodeBase) => {
         val expander = mutable.PriorityQueue(root)(Ordering.by(node => node.asInstanceOf[Node].getEnvelope.getArea))
 
