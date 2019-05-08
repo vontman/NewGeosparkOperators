@@ -1,4 +1,4 @@
-package example
+package outliersdetection
 
 import java.awt.Color
 import java.awt.image.BufferedImage

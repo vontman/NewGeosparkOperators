@@ -1,4 +1,4 @@
-package example
+package outliersdetection
 
 import com.vividsolutions.jts.geom.Envelope
 

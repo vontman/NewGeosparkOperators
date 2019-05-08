@@ -1,4 +1,4 @@
-package example
+package outliersdetection
 
 import java.util
 
@@ -11,6 +11,7 @@ import org.datasyslab.geospark.spatialRDD.PointRDD
 import scala.collection.JavaConversions._
 import scala.collection.mutable
 import scala.language.postfixOps
+
 
 object OutliersDetectionQ {
 

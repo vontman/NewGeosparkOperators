@@ -1,48 +1,65 @@
-package example
+package outliersdetection
 
-import com.vividsolutions.jts.geom.{Envelope, Point}
-import com.vividsolutions.jts.index.SpatialIndex
-import com.vividsolutions.jts.index.strtree.STRtree
+import com.vividsolutions.jts.geom.Envelope
+import com.vividsolutions.jts.index.strtree.{AbstractNode, Boundable, STRtree}
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialRDD.PointRDD
 
-import scala.collection.JavaConversions._
+object OutliersDetectionR {
 
-object OutliersDetection {
+  def findOutliers(rdd: PointRDD, k: Int, n: Int, iteration_number: Int): PointRDD = {
 
-  def findOutliers(rdd: PointRDD, k: Int, n: Int): PointRDD = {
+    val nextLevelQueryRDD = rdd.indexedRDD.rdd
+      .map(_.asInstanceOf[STRtree].getRoot)
+      .filter(_.asInstanceOf[Boundable].pointsCount() > 0)
+      .flatMap(node => {
+        if (node.getLevel == 0) {
+          List(node)
+        } else {
+          node.getChildBoundables.map(node => node.asInstanceOf[AbstractNode])
+        }
+      }).flatMap(node => {
+      if (node.getLevel == 0) {
+        List(node)
+      } else {
+        node.getChildBoundables.map(node => node.asInstanceOf[AbstractNode])
+      }
+    }).flatMap(node => {
+      if (node.getLevel == 0) {
+        List(node)
+      } else {
+        node.getChildBoundables.map(node => node.asInstanceOf[AbstractNode])
+      }
+    }).cache
 
-    val partitions: List[PartitionProps] = rdd.indexedRDD.rdd.filter(_.asInstanceOf[STRtree].size != 0)
-      .map((index: SpatialIndex) => {
-        val partitionProps = new PartitionProps()
-        partitionProps.setSize(index.asInstanceOf[STRtree].size())
-        partitionProps.setEnvelop(index.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope])
+    val partitions: List[PartitionProps] = nextLevelQueryRDD.map((node: Boundable) => {
+      val partitionProps = new PartitionProps()
+      partitionProps.setSize(node.pointsCount())
+      partitionProps.setEnvelop(node.getBounds.asInstanceOf[Envelope])
 
-        partitionProps
-      }).collect().toList
-
+      partitionProps
+    }).collect().toList
 
     println("# Partitions before pruning = " + partitions.size)
 
-    Plotter.plotPartitions(rdd.indexedRDD.sparkContext, partitions, "partitionsPlot")
+    Plotter.plotPartitions(rdd.indexedRDD.sparkContext, partitions, "partitionsPlot_" + iteration_number)
 
     val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitions, k, n)
 
     println("# Partitions after  pruning = " + candidates.size)
 
-    val filteredRDD = rdd.indexedRDD.rdd.filter(_.asInstanceOf[STRtree].size != 0)
-      .filter((partition: SpatialIndex) => {
-        val currentPartition = new PartitionProps
-        currentPartition.setEnvelop(partition.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope])
-        candidates.exists(candidate => candidate.equals(currentPartition))
-      }).mapPartitions(indices => indices.flatMap(index => {
-      index.query(index.asInstanceOf[STRtree].getRoot.getBounds.asInstanceOf[Envelope]).map(_.asInstanceOf[Point])
-    }))
+    val filteredRDD = nextLevelQueryRDD.filter((node: AbstractNode) => {
+      val currentPartition = new PartitionProps
+      currentPartition.setEnvelop(node.getBounds.asInstanceOf[Envelope])
+      candidates.exists(candidate => candidate.equals(currentPartition))
+    }).mapPartitions((indices: Iterator[AbstractNode]) => {
+      indices.flatMap(_.getPoints)
+    })
 
     val newRdd = new PointRDD(filteredRDD)
     newRdd.analyze()
 
-    newRdd.spatialPartitioning(GridType.EQUALGRID)
+    newRdd.spatialPartitioning(GridType.QUADTREE)
     newRdd.buildIndex(IndexType.RTREE, true)
     newRdd.indexedRDD.rdd.cache()
 
@@ -51,12 +68,7 @@ object OutliersDetection {
 
   private def computeCandidatePartitions(allPartitions: List[PartitionProps], k: Int, n: Int): Iterable[PartitionProps] = {
     allPartitions.foreach(partition => computeLowerUpper(allPartitions, partition, k))
-
-    println("============================================================")
-    allPartitions.foreach(p => {
-      println(p.size + "\t" + p.lower + "\t" + p.upper + "\t" + p.envelop)
-    })
-
+    println("Calculated lower and upper bounds")
     var pointsToTake = n
     val minDkDist = allPartitions.sortBy(p => -p.lower).takeWhile(p => {
       if (pointsToTake > 0) {
@@ -94,7 +106,8 @@ object OutliersDetection {
           } else {
             false
           }
-        }).map(p => getMinDist(partition.envelop, p.envelop)).max
+        })
+        .map(p => getMinDist(partition.envelop, p.envelop)).max
     )
 
 
@@ -109,11 +122,15 @@ object OutliersDetection {
           } else {
             false
           }
-        }).map(p => getMaxDist(partition.envelop, p.envelop)).max
+        })
+        .map(p => getMaxDist(partition.envelop, p.envelop)).max
     )
   }
 
   private def getMinDist(env1: Envelope, env2: Envelope): Double = {
+    if (env1.intersects(env2)) {
+      return 0
+    }
 
     val r = (env1.getMinX, env1.getMinY)
     val rd = (env1.getMaxX, env1.getMaxY)
@@ -143,15 +160,18 @@ object OutliersDetection {
   }
 
   private def getMaxDist(env1: Envelope, env2: Envelope): Double = {
-    val r = (env1.getMinX, env1.getMinY)
-    val rd = (env1.getMaxX, env1.getMaxY)
+    val l = for {
+      x <- List((env1.getMinX, env1.getMinY), (env1.getMinX, env1.getMaxY), (env1.getMaxX, env1.getMinY), (env1.getMaxX, env1.getMaxY))
+      y <- List((env2.getMinX, env2.getMinY), (env2.getMinX, env2.getMaxY), (env2.getMaxX, env2.getMinY), (env2.getMaxX, env2.getMaxY))
+    }
+      yield (x, y)
+    l.map(p => {
+      val p1 = p._1
+      val p2 = p._2
 
-    val s = (env2.getMinX, env2.getMinY)
-    val sd = (env2.getMaxX, env2.getMaxY)
-
-    val d1 = Math.max(Math.abs(sd._1 - r._1), Math.abs(rd._1 - s._1))
-    val d2 = Math.max(Math.abs(sd._2 - r._2), Math.abs(rd._2 - s._2))
-
-    d1 * d1 + d2 * d2
+      val d1 = Math.abs(p1._1 - p2._1)
+      val d2 = Math.abs(p1._2 - p2._2)
+      d1 * d1 + d2 * d2
+    }).max
   }
 }

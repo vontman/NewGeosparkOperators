@@ -1,4 +1,4 @@
-package example
+package outliersdetection
 
 import com.vividsolutions.jts.geom.Point
 import org.datasyslab.geospark.enums.IndexType

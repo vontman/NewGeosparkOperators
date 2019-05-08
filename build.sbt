@@ -40,9 +40,9 @@ libraryDependencies ++= Seq(
   "org.apache.hadoop" % "hadoop-mapreduce-client-core" % HadoopVersion % dependencyScope,
   "org.apache.hadoop" % "hadoop-common" % HadoopVersion % dependencyScope,
   "org.datasyslab" % "geospark" % GeoSparkVersion,
-  "org.datasyslab" % "geospark-sql_".concat(SparkCompatibleVersion) % GeoSparkVersion ,
+  "org.datasyslab" % "geospark-sql_".concat(SparkCompatibleVersion) % GeoSparkVersion,
   "org.datasyslab" % "geospark-viz" % GeoSparkVersion
-)
+).map(_.exclude("com.vividsolutions", "*"))
 
 assemblyMergeStrategy in assembly := {
   case PathList("org.datasyslab", "geospark", xs@_*) => MergeStrategy.first
@@ -59,6 +59,6 @@ resolvers +=
 resolvers +=
   "Open Source Geospatial Foundation Repository" at "http://download.osgeo.org/webdav/geotools"
 
- assemblyShadeRules in assembly := Seq(	
-  ShadeRule.rename("com.google.common.**" -> "repackaged.com.google.common.@1").inAll	
+assemblyShadeRules in assembly := Seq(
+  ShadeRule.rename("com.google.common.**" -> "repackaged.com.google.common.@1").inAll
 ) 
