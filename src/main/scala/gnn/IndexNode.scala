@@ -19,6 +19,8 @@ trait IndexNode extends Serializable {
 
   def getChildren: List[IndexNode]
 
+  def getAllPoints: List[Point]
+
   def getAverageX: Double
 
   def getAverageY: Double
@@ -44,6 +46,8 @@ case class RtreeNode(node: Boundable) extends IndexNode {
     case item: ItemBoundable =>
       List(IndexNode(item))
   }
+
+  override def getAllPoints: List[Point] = node.getPoints.toList
 
   override def getAverageX: Double = node.averageX()
 
@@ -79,6 +83,8 @@ case class QuadtreeNode(node: NodeBase) extends IndexNode {
       children
     }
   }
+
+  override def getAllPoints: List[Point] = node.getAllItems.toList
 
   override def getAverageX: Double = node.averageX()
 
