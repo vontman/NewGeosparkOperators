@@ -17,6 +17,8 @@ trait IndexNode extends Serializable {
 
   def getPointsCount: Int
 
+  def hasChildren: Boolean
+
   def getChildren: List[IndexNode]
 
   def getAllPoints: List[Point]
@@ -33,16 +35,17 @@ case class RtreeNode(node: Boundable) extends IndexNode {
 
   override def getChildren: List[IndexNode] = node match {
     case abstractNode: AbstractNode =>
-      if (abstractNode.getLevel == 0) {
-        List(IndexNode(abstractNode))
-      } else {
-        abstractNode.getChildBoundables
-          .view
-          .map(_.asInstanceOf[Boundable])
-          .withFilter(_.pointsCount() > 0)
-          .map(IndexNode(_))
-          .toList
-      }
+//      if (abstractNode.getLevel == 0) {
+////        List(IndexNode(abstractNode))
+//        List()
+//      } else {
+      abstractNode.getChildBoundables
+        .view
+        .map(_.asInstanceOf[Boundable])
+        .withFilter(_.pointsCount() > 0)
+        .map(IndexNode(_))
+        .toList
+//      }
     case item: ItemBoundable =>
       List(IndexNode(item))
   }
@@ -52,6 +55,18 @@ case class RtreeNode(node: Boundable) extends IndexNode {
   override def getAverageX: Double = node.averageX()
 
   override def getAverageY: Double = node.averageY()
+
+  override def hasChildren: Boolean = node match {
+    case abstractNode: AbstractNode =>
+//      if (abstractNode.getLevel == 0) {
+//        false
+//      } else {
+        abstractNode.getChildBoundables
+          .exists(_.asInstanceOf[Boundable].pointsCount() > 0)
+//      }
+    case _: ItemBoundable =>
+      false
+  }
 }
 
 case class QuadtreeNode(node: NodeBase) extends IndexNode {
@@ -89,4 +104,9 @@ case class QuadtreeNode(node: NodeBase) extends IndexNode {
   override def getAverageX: Double = node.averageX()
 
   override def getAverageY: Double = node.averageY()
+
+  override def hasChildren: Boolean = {
+    node.getSubnode
+      .exists( node => node != null && !node.isEmpty && !node.isPrunable && node.size() > 0)
+  }
 }
