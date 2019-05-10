@@ -8,11 +8,10 @@ import com.vividsolutions.jts.index.strtree.STRtree
 import org.apache.spark.rdd.RDD
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialRDD.PointRDD
-import gnn.IndexNode
+import utils.IndexNode
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable
-import scala.util.Random
 
 object OutliersDetectionGeneric {
   def apply(gridType: GridType, indexType: IndexType, maxNumberOfPartitions: Int) = {
@@ -33,8 +32,9 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, maxNumb
 
     val originalBounds = inputRDD.boundaryEnvelope
     val partitions: RDD[IndexNode] = expandLevels(inputRDD, maxNumberOfPartitions)
-    assert(new PointRDD(partitions.flatMap(_.getAllPoints)).countWithoutDuplicates() == inputRDD.countWithoutDuplicates())
+    //    assert(new PointRDD(partitions.flatMap(_.getAllPoints)).countWithoutDuplicates() == inputRDD.countWithoutDuplicates())
 
+    println("Before # of Points = " + inputRDD.countWithoutDuplicates())
     println("# Partitions before pruning = " + partitions.count())
 
     val partitionPropsRDD = partitions.map((node: IndexNode) => {
@@ -77,57 +77,37 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, maxNumb
     val candidatePoints = new PointRDD(candidatePointsRDD)
     val filteredPoints = new PointRDD(filteredPointsRDD)
 
+    println("After # of Points = " + candidatePoints.countWithoutDuplicates())
+
     Array(candidatePoints, filteredPoints).foreach(rdd => {
       rdd.analyze()
-
-      rdd.spatialPartitioning(gridType)
-      rdd.buildIndex(indexType, true)
-      rdd.indexedRDD.rdd.cache()
-
+      try {
+        rdd.spatialPartitioning(gridType)
+        rdd.buildIndex(indexType, true)
+      } catch {
+        case _: Exception =>
+      }
     })
 
     assert(candidatePoints.rawSpatialRDD.count() + filteredPoints.rawSpatialRDD.count() == inputRDD.rawSpatialRDD.count())
 
+    if (candidatePoints.countWithoutDuplicates() == inputRDD.countWithoutDuplicates()) {
+      return candidatePoints
+    }
+
     Plotter.visualize(inputRDD.indexedRDD.sparkContext, inputRDD, "Iteration_" + iteration_number + "_A", originalBounds)
 
-    Plotter.visualize(candidatePoints.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_B", originalBounds)
+    Plotter.visualize(inputRDD.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_B", originalBounds)
 
-    Plotter.visualize(candidatePoints.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_C", originalBounds, filteredPoints)
+    Plotter.visualize(inputRDD.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_C", originalBounds, filteredPoints)
 
-    Plotter.visualize(candidatePoints.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_D", originalBounds, filteredPoints, partitionsList)
+    Plotter.visualize(inputRDD.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_D", originalBounds, filteredPoints, partitionsList)
 
     candidatePoints
   }
 
   private def expandLevels(rdd: PointRDD, maxNumberOfPartitions: Int): RDD[IndexNode] = {
     val partitionsPerIndex = math.ceil((maxNumberOfPartitions * 1.0) / rdd.getPartitioner.numPartitions)
-
-    //    var nextLevelGrids = rdd.indexedRDD.rdd
-    //      .map(_.asInstanceOf[Quadtree].getRoot)
-    //      .map(_.asInstanceOf[NodeBase])
-    //      .filter(_.size > 0)
-    //    for (_ <- 0 to levels) {
-    //      nextLevelGrids = nextLevelGrids.flatMap((node: NodeBase) => {
-    //        if (!node.hasChildren) {
-    //          List(node)
-    //        } else {
-    //          if (node.hasItems) {
-    //            val extraBounds: Envelope = node.getItems.map(item => {
-    //              new Envelope(item.asInstanceOf[Point].getCoordinate)
-    //            }).reduce((a, b) => {
-    //              a.expandToInclude(b)
-    //              a
-    //            })
-    //            val extraNode = new Node(extraBounds, 10)
-    //            extraNode.setItems(node.getItems)
-    //            extraNode :: node.getSubnode.toList.filter(_ != null)
-    //          } else {
-    //            node.getSubnode.toList.filter(_ != null)
-    //          }
-    //        }
-    //      })
-    //    }
-    //    nextLevelGrids.cache()
 
     val AREA_MAX = rdd.boundaryEnvelope.getArea / 300
     val AREA_MIN = rdd.boundaryEnvelope.getArea / 3000
@@ -141,7 +121,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, maxNumb
       .flatMap((initNode: IndexNode) => {
         var initNodes = List(initNode)
         var tmpNodes = List[IndexNode]()
-        while(initNodes.nonEmpty && initNodes.size + tmpNodes.size < partitionsPerIndex && initNodes.exists(_.getBounds.getArea > AREA_MAX)) {
+        while (initNodes.nonEmpty && initNodes.size + tmpNodes.size < partitionsPerIndex && initNodes.exists(_.getBounds.getArea > AREA_MAX)) {
           val (nodesUnderThreshold, nodesAboveThreshold) = initNodes.partition(node => !node.hasChildren || node.getBounds.getArea < AREA_MAX)
           tmpNodes = tmpNodes ::: nodesUnderThreshold
           initNodes = nodesAboveThreshold.flatMap(_.getChildren)

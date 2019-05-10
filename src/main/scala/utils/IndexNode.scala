@@ -1,4 +1,4 @@
-package gnn
+package utils
 
 import com.vividsolutions.jts.geom.{Envelope, Point}
 import com.vividsolutions.jts.index.quadtree.NodeBase

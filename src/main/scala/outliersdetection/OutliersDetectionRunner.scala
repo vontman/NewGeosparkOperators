@@ -2,17 +2,14 @@ package outliersdetection
 
 import java.io.File
 
-import com.vividsolutions.jts.geom.Point
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.serializer.KryoSerializer
 import org.datasyslab.geospark.enums.{GridType, IndexType}
-import org.datasyslab.geospark.spatialRDD.PointRDD
 import org.datasyslab.geosparkviz.core.Serde.GeoSparkVizKryoRegistrator
-import utils.{GenerateGuassianData, GenerateZipfData}
+import utils.GenerateGuassianData
 
-import scala.collection.JavaConversions._
 import scala.language.postfixOps
 
 object OutliersDetectionRunner {
@@ -27,59 +24,36 @@ object OutliersDetectionRunner {
     val sc = new JavaSparkContext(conf)
     deleteOldValidation()
     val data = GenerateGuassianData().generate(101000, 800000, sc.sc)
+
+    val n = 300
+    val k = 300
+
     data.analyze
     var nextRdd = data
     var prevCount = 0L
     var nextCount = 0L
     var pruningIteration = 1
-    do {
+    for (_ <- 0 to 1) {
       prevCount = nextRdd.countWithoutDuplicates
-      println("Before # of Points = " + prevCount)
-      nextRdd = OutliersDetectionGeneric(GridType.QUADTREE, IndexType.QUADTREE, 15000).findOutliers(nextRdd, 300, 300, pruningIteration)
+      nextRdd = OutliersDetectionGeneric(GridType.QUADTREE, IndexType.QUADTREE, 4000).findOutliers(nextRdd, n, k, pruningIteration)
       nextCount = nextRdd.countWithoutDuplicates
-      println("After # of Points = " + nextCount + "\n")
       println("Pruning = " + ((1.0 * data.countWithoutDuplicates - nextCount) / data.countWithoutDuplicates * 100.0) + "\n")
 
       pruningIteration += 1
-    } while ( {
-      nextCount < prevCount
-    })
-    println("Pruning Iterations = " + pruningIteration)
-//    runNiiveSolution(sc, nextRdd)
-    //        compareToNaiiveSolution(sc, data, nextRdd);
+    }
+
+//    val ans =
+//      new PointRDD(sc.parallelize(new KNNJoinWithCircles().solve(nextRdd, nextRdd, k)
+//        .rdd.sortBy(p => p._1.disjoint(p._2), ascending = false)
+//        .take(n).map(_._1).toList))
+//
+//    ans.analyze()
+//    ans.spatialPartitioning(GridType.QUADTREE)
+//    ans.buildIndex(IndexType.QUADTREE, true)
+//    Plotter.visualize(sc, ans, "solution", data.boundaryEnvelope)
+
     sc.stop
   }
-
-//  private def runNiiveSolution(sc: JavaSparkContext, data: PointRDD): Unit = {
-//    data.spatialPartitioning(GridType.RTREE)
-//    data.buildIndex(IndexType.QUADTREE, true)
-//    data.indexedRDD.cache
-//    val ans = OutliersDetectionNaiive.findOutliersNaive(data, 300, 300)
-//    val solutionRdd = new PointRDD(sc.parallelize(ans))
-//    solutionRdd.analyze
-//    Plotter.visualizeNaiive(sc, solutionRdd, "NaiiveSolution")
-//    System.out.println(ans.size + " Outliers were found!")
-//  }
-//
-//  private def compareToNaiiveSolution(sc: JavaSparkContext, data: PointRDD, nextRdd: PointRDD): Unit = {
-//    data.spatialPartitioning(GridType.RTREE)
-//    data.buildIndex(IndexType.QUADTREE, true)
-//    data.indexedRDD.cache
-//    var found: Int = 0
-//    val doubtList = nextRdd.spatialPartitionedRDD.collect()
-//    val ans: List[Point] = OutliersDetectionNaiive.findOutliersNaive(data, 100, 100)
-//    for (p <- ans) {
-//      for (x <- doubtList) {
-//        if ((x.getX == p.getX) && (x.getY == p.getY)) found += 1
-//      }
-//    }
-//    System.out.println(if (ans.size == found) "VALID SOLUTION"
-//    else "INVALID SOLUTION")
-//    val solutionRdd = new PointRDD(sc.parallelize(ans))
-//    solutionRdd.analyze
-//    Plotter.visualizeNaiive(sc, solutionRdd, "NaiiveSolution")
-//    System.out.println(ans.size + " Outliers were found!")
-//  }
 
   private def deleteOldValidation() = {
     System.out.println("Delete old visualizations")

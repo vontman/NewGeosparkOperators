@@ -1,17 +1,12 @@
 package gnn
 
-import com.vividsolutions.jts.geom.{
-  Coordinate,
-  Envelope,
-  GeometryFactory,
-  Point
-}
+import com.vividsolutions.jts.geom.{Coordinate, Envelope, GeometryFactory, Point}
 import com.vividsolutions.jts.index.quadtree.Quadtree
 import com.vividsolutions.jts.index.strtree.STRtree
 import org.apache.spark.rdd.RDD
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialRDD.{PointRDD, PolygonRDD}
-import utils.Visualization
+import utils.{IndexNode, Visualization}
 
 import scala.collection.mutable
 import scala.util.Random
