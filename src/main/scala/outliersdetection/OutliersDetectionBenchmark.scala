@@ -116,7 +116,7 @@ object OutliersDetectionBenchmark {
         indexType = IndexType.QUADTREE
 
 //        (expansionFunction, expanderName) <- ExpanderWithAreaBounds.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
-        (expansionFunction, expanderName) <- ExpanderByPointsRatioPerGrid.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
+        (expansionFunction, expanderName) <- ExpanderByTotalPointsRatio.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
 
         solverName = s"${gridType}_${expanderName}"
       } {
