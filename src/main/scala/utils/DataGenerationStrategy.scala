@@ -28,8 +28,7 @@ case class GenerateUniformData() extends DataGenerationStrategy {
             new Coordinate(
               Random.nextDouble * (xBoundsMax - xBoundsMin) + xBoundsMin,
               Random.nextDouble * (yBoundsMax - yBoundsMin) + yBoundsMin
-            )),
-        16
+            ))
       ))
   }
 }
@@ -50,8 +49,7 @@ case class GenerateGuassianData() extends DataGenerationStrategy {
             new Coordinate(
               (Random.nextGaussian + 4.0) / 8.0 * (xBoundsMax - xBoundsMin) + xBoundsMin,
               (Random.nextGaussian + 4.0) / 8.0 * (yBoundsMax - yBoundsMin) + yBoundsMin
-            )),
-        16
+            ))
       ))
   }
 }
@@ -74,8 +72,7 @@ case class GenerateExponentialData() extends DataGenerationStrategy {
               .log(1 - Random.nextDouble()) / -lambda * (xBoundsMax - xBoundsMin) + xBoundsMin,
             math
               .log(1 - Random.nextDouble()) / -lambda * (yBoundsMax - yBoundsMin) + yBoundsMin
-          )),
-        16
+          ))
       ))
   }
 }
@@ -128,8 +125,7 @@ case class GenerateNonUniformData() extends DataGenerationStrategy {
                     yMinBounds
                 ))
           }
-        },
-        16
+        }
       ))
   }
 }
