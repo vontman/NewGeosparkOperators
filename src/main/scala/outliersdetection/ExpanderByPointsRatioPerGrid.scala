@@ -9,16 +9,31 @@ import utils.IndexNode
 import scala.collection.mutable
 import util.control.Breaks._
 
+object ExpanderByPointsRatioPerGrid {
+  def getPermutations: List[(LevelExpander, String)] = {
+
+    for {
+      maxPartitionsRatio <- List(.1)
+      threshold <- List(30000, 15000, 10000, 5000)
+      (comparator, comparatorName) <- List[(IndexNode => Double, String)](
+        (indexNode => indexNode.getBounds.getArea, "area"),
+        (indexNode => indexNode.getPointsCount / indexNode.getBounds.getArea, "density"),
+        (indexNode => -indexNode.getPointsCount / indexNode.getBounds.getArea, "negDensity"),
+        (indexNode => indexNode.getPointsCount, "pointsCount")
+      )
+
+    } yield (
+    new ExpanderByPointsRatioPerGrid(maxPartitionsRatio, threshold, comparator), s"ExpanderByPointsRatioPerGrid_${maxPartitionsRatio}_${threshold}_${comparatorName}"
+    )
+
+  }
+}
+
+
 class ExpanderByPointsRatioPerGrid(
                                     maxPartitionsToPointsRatio: Double,
                                     maxThreshold: Int,
                                    queueComparator: IndexNode => Double) extends LevelExpander {
-
-  val parametersList = List(
-    0,
-    0,
-    0
-  )
 
   private def levelsExpander(rdd: PointRDD): RDD[IndexNode] = {
     val partitionsToPointsRatio = math.min(

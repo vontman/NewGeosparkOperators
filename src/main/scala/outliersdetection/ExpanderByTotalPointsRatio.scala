@@ -6,16 +6,24 @@ import org.apache.spark.rdd.RDD
 import org.datasyslab.geospark.spatialRDD.PointRDD
 import utils.IndexNode
 
+object ExpanderByTotalPointsRatio {
+  def getPermutations: List[(LevelExpander, String)] = {
+
+    for {
+      maxPartitionsRatio <- List(.1)
+      threshold <- List(30000, 15000, 10000, 5000)
+
+    } yield (
+      new ExpanderByTotalPointsRatio(maxPartitionsRatio, threshold), s"ExpanderByTotalPointsRatio_${maxPartitionsRatio}_${threshold}"
+    )
+
+  }
+}
+
 class ExpanderByTotalPointsRatio(
     partitionsToPointsRatio: Double,
     maxThreshold: Int
 ) extends LevelExpander {
-
-  val parametersList = List(
-    (),
-    (),
-    ()
-  )
 
   private def levelsExpander(rdd: PointRDD): RDD[IndexNode] = {
     val numberOfPartitions = math.min(

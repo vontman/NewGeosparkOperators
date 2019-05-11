@@ -10,18 +10,34 @@ import utils.IndexNode
 
 import scala.collection.mutable
 
+object ExpanderWithAreaBounds {
+  def getPermutations: List[(LevelExpander, String)] = {
+
+    for {
+      maxPartitionsRatio <- List(.1)
+      threshold <- List(30000, 15000, 10000, 5000)
+      minAreaRatio <- List(1.0 / 300)
+      maxAreaRatio <- List(1.0 / 5000)
+      (comparator, comparatorName) <- List[(IndexNode => Double, String)](
+        (indexNode => indexNode.getBounds.getArea, "area"),
+        (indexNode => indexNode.getPointsCount / indexNode.getBounds.getArea, "density"),
+        (indexNode => -indexNode.getPointsCount / indexNode.getBounds.getArea, "negDensity"),
+        (indexNode => indexNode.getPointsCount, "pointsCount")
+      )
+
+    } yield (
+      new ExpanderWithAreaBounds(maxPartitionsRatio, threshold, minAreaRatio, maxAreaRatio, comparator), s"ExpanderWithAreaBounds_${maxPartitionsRatio}_${threshold}_${minAreaRatio}_${maxAreaRatio}_${comparatorName}"
+    )
+
+  }
+}
+
 class ExpanderWithAreaBounds(
                               maxPartitionsToPointsRatio: Double,
                               maxThreshold: Int,
                               minAreaRatio: Double,
                               maxAreaRatio: Double,
                               comparator: IndexNode => Double) extends LevelExpander {
-  val parametersList = List(
-    (),
-    (),
-    ()
-  )
-
   private def levelsExpander(rdd: PointRDD): RDD[IndexNode] = {
     val partitionsToPointsRatio = math.min(
       maxPartitionsToPointsRatio,
@@ -41,26 +57,20 @@ class ExpanderWithAreaBounds(
 
         var initNodes = List[IndexNode](initNode)
         var tmpNodes = List[IndexNode]()
-        var break = false
 
-        while (!break && initNodes.nonEmpty &&
-          initNodes.size + tmpNodes.size < numberOfPartitions
-          && initNodes.exists(_.getBounds.getArea > maxAreaRatio * area)) {
-
-          val (nodesUnderThreshold, nodesAboveThreshold) = initNodes.partition(node => !node.hasChildren || node.getBounds.getArea < maxAreaRatio)
-
-          val newTmp = tmpNodes ::: nodesUnderThreshold
-          val newInitNodes = nodesAboveThreshold.flatMap(_.getChildren)
-
-          if (newTmp.size + newInitNodes.size >= numberOfPartitions) {
-            break = true
+        while(initNodes.size + tmpNodes.size < numberOfPartitions && initNodes.nonEmpty) {
+          val head = initNodes.head
+          initNodes = initNodes.tail
+          val children = head.getChildren
+          if (head.getBounds.getArea <= maxAreaRatio * area || children.isEmpty) {
+            tmpNodes ::= head
           } else {
-            tmpNodes = newTmp
-            initNodes = newInitNodes
+            initNodes = initNodes ::: children
           }
         }
 
         initNodes = initNodes ::: tmpNodes
+//        println("First Stage " + initNodes.size)
 
         val expander = mutable.PriorityQueue[IndexNode]()(Ordering.by(comparator))
         initNodes.foreach(expander.enqueue(_))
@@ -76,7 +86,10 @@ class ExpanderWithAreaBounds(
             children.foreach(expander.enqueue(_))
           }
         }
+
+//        println("SecondStage " + (expander.size + leafNodes.size))
         expander.toList ::: leafNodes
+
       }).cache()
 
     ret

@@ -35,7 +35,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     val dataCount = inputRDD.spatialPartitionedRDD.count()
     //    assert(new PointRDD(partitions.flatMap(_.getAllPoints)).countWithoutDuplicates() == inputRDD.countWithoutDuplicates())
 
-//    println("Before # of Points = " + dataCount)
+    println("Before # of Points = " + dataCount)
     println("# Partitions before pruning = " + partitions.count())
     logger += "used_partitions" -> partitions.count().toString
 
@@ -54,7 +54,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     //    val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitions, k, n)
     val candidates = computeCandidatePartitions(partitionPropsRdd.collect().toList, k, n)
 
-//    println("# Partitions after  pruning = " + candidates.size)
+    println("# Partitions after  pruning = " + candidates.size)
     logger += "partitions_after_pruning" -> candidates.size.toString
 
     val candidatePointsRDD: RDD[Point] = partitions.filter((node: IndexNode) => {
@@ -85,7 +85,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     val filteredPoints = new PointRDD(filteredPointsRDD)
     val candidatePointsCount = candidatePoints.rawSpatialRDD.count()
 
-//    println("After # of Points = " + candidatePointsCount)
+    println("After # of Points = " + candidatePointsCount)
 
     Array(candidatePoints, filteredPoints).foreach(rdd => {
       rdd.analyze()

@@ -1,6 +1,7 @@
 package outliersdetection
 
 import java.io.File
+import java.util.concurrent.TimeoutException
 
 import com.bizo.mighty.csv.CSVDictWriter
 import com.vividsolutions.jts.geom.Point
@@ -8,20 +9,31 @@ import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.serializer.KryoSerializer
-import org.datasyslab.geospark.enums.{GridType, IndexType}
+import org.datasyslab.geospark.enums.{FileDataSplitter, GridType, IndexType}
+import org.datasyslab.geospark.spatialRDD.PointRDD
 import org.datasyslab.geosparkviz.core.Serde.GeoSparkVizKryoRegistrator
-import utils.{
-  GenerateExponentialData,
-  GenerateGuassianData,
-  GenerateNonUniformData,
-  GenerateUniformData,
-  GenerateZipfData
-}
+import utils.{GenerateExponentialData, GenerateGuassianData, GenerateNonUniformData, GenerateUniformData, GenerateZipfData, Visualization}
 
+import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.Random
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent._
+import scala.concurrent.duration._
 
 object OutliersDetectionBenchmark {
+
+  def runWithTimeout[T](timeoutMs: Long)(f: => T): Option[T] = {
+    try {
+      Some(Await.result(Future(f), timeoutMs milliseconds))
+    } catch {
+      case _: TimeoutException => None
+      case e: Exception =>
+        println(e.getMessage)
+        e.printStackTrace()
+        None
+    }
+  }
 
   @throws[Exception]
   def main(args: Array[String]): Unit = {
@@ -65,55 +77,48 @@ object OutliersDetectionBenchmark {
 
     for {
       inputGenerationStrategy <- List(
-                GenerateUniformData(),
+//                GenerateUniformData(),
         GenerateGuassianData(),
         GenerateExponentialData(),
         GenerateNonUniformData(),
         GenerateZipfData(.75),
-        GenerateZipfData(.9))
+        GenerateZipfData(.9)
+                )
 
       (dataCount, n, k, maxIterations) <- List(
-        (50000, 100, 100, 1)
-        //        (10000, 100, 100, 20),
-        //        (50000, 100, 100, 20),
-        //        (100000, 300, 200, 10),
-        //        (250000, 300, 300, 10),
-        //        (500000, 300, 300, 5),
-        //        (1000000, 500, 700, 3)
+//        (50000, 100, 100, 10)
+                (10000, 100, 100, 20),
+                (50000, 100, 100, 20),
+                (100000, 300, 200, 10),
+                (250000, 300, 300, 10),
+                (500000, 300, 300, 5),
+                (1000000, 500, 700, 3)
       )
 
       iteration <- 1 to maxIterations
 
-      gridType <- List(GridType.QUADTREE, GridType.RTREE)
-      indexType = IndexType.QUADTREE
-
     } {
       val dataRDD = inputGenerationStrategy.generate(dataCount, 100000, sc)
+//      val dataRDD = {
+//        val location = "benchmark/1557588114229/2640218211505695195_RTREE_ExpanderWithAreaBounds_.1_10k_.003_.0003_RTREE_100_ 100_GenerateExponentialData_data"
+//        val splitter = FileDataSplitter.GEOJSON
+//        val offset = 0
+//        new PointRDD(sc,
+//          location,
+//          offset,
+//          splitter,
+//          true)
+//      }
       val id = Random.nextLong()
 
       for {
+        gridType <- List(GridType.QUADTREE, GridType.RTREE)
+        indexType = IndexType.QUADTREE
 
-        (expansionFunction, solverName) <- List(
-          (
-            new ExpanderWithAreaBounds(.1,
-              500,
-              0.003,
-              0.00005,
-              node => node.getBounds.getArea),
-            "ExpanderWithAreaBounds_.1_10k_.003_.0003"
-          ),
-          (
-            new ExpanderByTotalPointsRatio(.1, 500),
-            "ExpanderByTotalPointsRatio_.1_10k_.003_.0003"
-          ),
-          (
-            new ExpanderByPointsRatioPerGrid(.1,
-              500,
-              node => node.getBounds.getArea),
-            "ExpanderByPointsRatioPerGrid_.1_10k_.003_.0003"
-          )
-        )
+//        (expansionFunction, expanderName) <- ExpanderWithAreaBounds.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
+        (expansionFunction, expanderName) <- ExpanderByPointsRatioPerGrid.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
 
+        solverName = s"${gridType}_${expanderName}"
       } {
         println(
           s"Starting a new test iteration: $iteration/$maxIterations, dataCount: $dataCount, solver: $solverName, inputGen: ${inputGenerationStrategy.getClass.getSimpleName}")
@@ -123,13 +128,34 @@ object OutliersDetectionBenchmark {
         var logger = defLog
 
         for (iter <- 1 to 2) {
-          val (logs, filteredRDD) =
-            OutliersDetectionGeneric(gridType, indexType, expansionFunction)
-              .findOutliers(
-                currDataRDD,
-                n,
-                k,
-                s"$outputPath/${id}_${solverName}_${inputGenerationStrategy.getClass.getSimpleName}_iteration_${iter}_")
+
+          val (logs, filteredRDD) = {
+
+            val ret = runWithTimeout(240000) {
+              OutliersDetectionGeneric(gridType, indexType, expansionFunction)
+                .findOutliers(
+                  currDataRDD,
+                  n,
+                  k,
+                  s"$outputPath/${id}_${solverName}_${inputGenerationStrategy.getClass.getSimpleName}_iteration_${iter}_")
+            }
+
+            ret match {
+              case Some(res) => res
+              case None =>
+                dataRDD.saveAsGeoJSON(
+                s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_ ${n}_${inputGenerationStrategy.getClass.getSimpleName}_data"
+                )
+                Visualization.buildScatterPlot(
+                  List(dataRDD),
+                  s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_ ${n}_${inputGenerationStrategy.getClass.getSimpleName}_plot"
+                )
+
+                (defLog, currDataRDD)
+            }
+
+
+          }
           val newPointsCount = filteredRDD.rawSpatialRDD.count()
 
           logger ++=
@@ -141,12 +167,12 @@ object OutliersDetectionBenchmark {
               "input_generation_strategy" -> inputGenerationStrategy.getClass.getSimpleName,
               "gridType" -> gridType.toString,
               "indexType" -> indexType.toString,
-              s"iteration_${iter}_used_partitions" -> logs("used_partitions"),
-              s"iteration_${iter}_partitions_after_pruning" -> logs(
-                "partitions_after_pruning"),
+              s"iteration_${iter}_used_partitions" -> logs.getOrElse("used_partitions", "0"),
+              s"iteration_${iter}_partitions_after_pruning" -> logs.getOrElse(
+                "partitions_after_pruning", "0"),
               s"iteration_${iter}_points_after_pruning" -> newPointsCount.toString,
               s"iteration_${iter}_pruning_percentage" -> (100.0 * (dataCount - newPointsCount) / dataCount).toString,
-              s"iteration_${iter}_time" -> logs("time")
+              s"iteration_${iter}_time" -> logs.getOrElse("time", "120000")
             )
 
           currDataRDD = filteredRDD
