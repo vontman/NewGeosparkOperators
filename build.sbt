@@ -63,7 +63,7 @@ assemblyShadeRules in assembly := Seq(
   ShadeRule.rename("com.google.common.**" -> "repackaged.com.google.common.@1").inAll
 )
 
-val outliersMain = "outliersdetection.OutliersDetectionRunner"
+val outliersMain = "outliersdetection.OutliersDetectionBenchmark"
 val knnMain = "KNNJoinBenchmark"
 val gnnMain = "gnn.GNNBenchmark"
 
