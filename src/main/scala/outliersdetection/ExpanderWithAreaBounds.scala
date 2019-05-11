@@ -1,5 +1,7 @@
 package outliersdetection
 
+
+import util.control.Breaks._
 import com.vividsolutions.jts.index.quadtree.Quadtree
 import com.vividsolutions.jts.index.strtree.STRtree
 import org.apache.spark.rdd.RDD
@@ -9,9 +11,10 @@ import utils.IndexNode
 import scala.collection.mutable
 
 class ExpanderWithAreaBounds(
+                              maxPartitionsToPointsRatio: Double,
                               maxThreshold: Int,
-                              minArea: Int,
-                              maxArea: Int,
+                              minAreaRatio: Double,
+                              maxAreaRatio: Double,
                               comparator: IndexNode => Double) extends LevelExpander {
   val parametersList = List(
     (),
@@ -20,24 +23,41 @@ class ExpanderWithAreaBounds(
   )
 
   private def levelsExpander(rdd: PointRDD): RDD[IndexNode] = {
-    val partitionsPerIndex = math.ceil((maxThreshold * 1.0) / rdd.getPartitioner.numPartitions)
+    val partitionsToPointsRatio = math.min(
+      maxPartitionsToPointsRatio,
+      maxThreshold.toDouble / rdd.approximateTotalCount
+    )
 
-    rdd.indexedRDD.rdd
+    val area = rdd.boundaryEnvelope.getArea
+
+    val ret = rdd.indexedRDD.rdd
       .map({
         case t: Quadtree => IndexNode(t.getRoot)
         case t: STRtree => IndexNode(t.getRoot)
       })
       .filter(_.getPointsCount > 0)
       .flatMap((initNode: IndexNode) => {
-        var initNodes = List(initNode)
-        var tmpNodes = List[IndexNode]()
-        while (initNodes.nonEmpty &&
-          initNodes.size + tmpNodes.size < partitionsPerIndex
-          && initNodes.exists(_.getBounds.getArea > maxArea)) {
+        val numberOfPartitions = initNode.getPointsCount.toDouble * partitionsToPointsRatio
 
-          val (nodesUnderThreshold, nodesAboveThreshold) = initNodes.partition(node => !node.hasChildren || node.getBounds.getArea < maxArea)
-          tmpNodes = tmpNodes ::: nodesUnderThreshold
-          initNodes = nodesAboveThreshold.flatMap(_.getChildren)
+        var initNodes = List[IndexNode](initNode)
+        var tmpNodes = List[IndexNode]()
+        var break = false
+
+        while (!break && initNodes.nonEmpty &&
+          initNodes.size + tmpNodes.size < numberOfPartitions
+          && initNodes.exists(_.getBounds.getArea > maxAreaRatio * area)) {
+
+          val (nodesUnderThreshold, nodesAboveThreshold) = initNodes.partition(node => !node.hasChildren || node.getBounds.getArea < maxAreaRatio)
+
+          val newTmp = tmpNodes ::: nodesUnderThreshold
+          val newInitNodes = nodesAboveThreshold.flatMap(_.getChildren)
+
+          if (newTmp.size + newInitNodes.size >= numberOfPartitions) {
+            break = true
+          } else {
+            tmpNodes = newTmp
+            initNodes = newInitNodes
+          }
         }
 
         initNodes = initNodes ::: tmpNodes
@@ -47,10 +67,10 @@ class ExpanderWithAreaBounds(
 
         var leafNodes: List[IndexNode] = List()
 
-        while (expander.size + leafNodes.size < partitionsPerIndex && expander.nonEmpty) {
+        while(expander.size + leafNodes.size < numberOfPartitions && expander.nonEmpty && expander.size + leafNodes.size + expander.head.getChildren.size < numberOfPartitions) {
           val top = expander.dequeue()
           val children = top.getChildren
-          if (children.isEmpty || top.getBounds.getArea <= minArea) {
+          if (children.isEmpty || top.getBounds.getArea <= minAreaRatio * area) {
             leafNodes ::= top
           } else {
             children.foreach(expander.enqueue(_))
@@ -58,6 +78,8 @@ class ExpanderWithAreaBounds(
         }
         expander.toList ::: leafNodes
       }).cache()
+
+    ret
   }
 
 

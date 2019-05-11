@@ -19,8 +19,8 @@ object Plotter {
     val scatterOutput = Paths.get("visualization/outliers", plotName).toString
 
 
-    val resX = 800
-    val resY = 800
+    val resX = 200
+    val resY = 200
 
     val dataOperator = new ScatterPlot(resX, resY, pointRDD.boundaryEnvelope, false, false)
     dataOperator.CustomizeColor(255, 255, 255, 255, Color.RED, true)
@@ -42,12 +42,25 @@ object Plotter {
                 totalPlotBounds: Envelope,
                 filteredPoints: PointRDD = null,
                 partitions: List[PartitionProps] = null): Unit = {
-
     val scatterOutput = Paths.get("visualization/outliers", plotName).toString
+    visualize2(scatterOutput, sc, candidatePoints, plotName, totalPlotBounds, filteredPoints, partitions)
+
+  }
 
 
-    val resX = 300
-    val resY = 300
+
+    def visualize2(scatterOutput: String,
+                   sc: JavaSparkContext,
+                candidatePoints: PointRDD,
+                plotName: String,
+                totalPlotBounds: Envelope,
+                filteredPoints: PointRDD = null,
+                partitions: List[PartitionProps] = null
+                  ): Unit = {
+
+
+    val resX = 200
+    val resY = 200
 
     var grids: PolygonRDD = null
     if (partitions != null) {
