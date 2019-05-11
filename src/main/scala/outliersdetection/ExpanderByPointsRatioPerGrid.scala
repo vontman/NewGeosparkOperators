@@ -41,7 +41,7 @@ class ExpanderByPointsRatioPerGrid(
 
         var leafNodes: List[IndexNode] = List()
 
-        while(expander.size + leafNodes.size < numberOfPartitions && expander.nonEmpty && expander.size + leafNodes.size + expander.head.getChildren.size < numberOfPartitions) {
+        while(expander.size + leafNodes.size < numberOfPartitions && expander.nonEmpty) {
           val top = expander.dequeue()
           val children = top.getChildren
           if (children.isEmpty) {

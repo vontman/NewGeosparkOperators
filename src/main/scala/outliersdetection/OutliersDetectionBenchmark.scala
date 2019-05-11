@@ -65,7 +65,7 @@ object OutliersDetectionBenchmark {
 
     for {
       inputGenerationStrategy <- List(
-        //        GenerateUniformData(),
+                GenerateUniformData(),
         GenerateGuassianData(),
         GenerateExponentialData(),
         GenerateNonUniformData(),
@@ -96,19 +96,19 @@ object OutliersDetectionBenchmark {
         (expansionFunction, solverName) <- List(
           (
             new ExpanderWithAreaBounds(.1,
-              5000,
+              500,
               0.003,
               0.00005,
               node => node.getBounds.getArea),
             "ExpanderWithAreaBounds_.1_10k_.003_.0003"
           ),
           (
-            new ExpanderByTotalPointsRatio(.1, 5000),
+            new ExpanderByTotalPointsRatio(.1, 500),
             "ExpanderByTotalPointsRatio_.1_10k_.003_.0003"
           ),
           (
             new ExpanderByPointsRatioPerGrid(.1,
-              5000,
+              500,
               node => node.getBounds.getArea),
             "ExpanderByPointsRatioPerGrid_.1_10k_.003_.0003"
           )
@@ -118,8 +118,7 @@ object OutliersDetectionBenchmark {
         println(
           s"Starting a new test iteration: $iteration/$maxIterations, dataCount: $dataCount, solver: $solverName, inputGen: ${inputGenerationStrategy.getClass.getSimpleName}")
 
-        var currDataRDD =
-          inputGenerationStrategy.generate(dataCount, 100000, sc)
+        var currDataRDD = dataRDD
 
         var logger = defLog
 
@@ -127,7 +126,7 @@ object OutliersDetectionBenchmark {
           val (logs, filteredRDD) =
             OutliersDetectionGeneric(gridType, indexType, expansionFunction)
               .findOutliers(
-                dataRDD,
+                currDataRDD,
                 n,
                 k,
                 s"$outputPath/${id}_${solverName}_${inputGenerationStrategy.getClass.getSimpleName}_iteration_${iter}_")
