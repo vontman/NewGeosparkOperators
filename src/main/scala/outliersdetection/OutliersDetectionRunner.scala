@@ -1,3 +1,4 @@
+/*
 package outliersdetection
 
 import java.io.File
@@ -62,3 +63,4 @@ object OutliersDetectionRunner {
     process.waitFor
   }
 }
+*/
