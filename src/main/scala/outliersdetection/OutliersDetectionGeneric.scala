@@ -3,24 +3,21 @@ package outliersdetection
 import java.util
 
 import com.vividsolutions.jts.geom.{Envelope, Point}
-import com.vividsolutions.jts.index.quadtree.Quadtree
-import com.vividsolutions.jts.index.strtree.STRtree
 import org.apache.spark.rdd.RDD
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialRDD.PointRDD
 import utils.IndexNode
 
 import scala.collection.JavaConversions._
-import scala.collection.mutable
 
 object OutliersDetectionGeneric {
-  def apply(gridType: GridType, indexType: IndexType, maxNumberOfPartitions: Int) = {
-    new OutliersDetectionGeneric(gridType, indexType, maxNumberOfPartitions)
+  def apply(gridType: GridType, indexType: IndexType, levelsExpander: LevelExpander): OutliersDetectionGeneric = {
+    new OutliersDetectionGeneric(gridType, indexType, levelsExpander: LevelExpander)
   }
 
 }
 
-class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, maxNumberOfPartitions: Int) extends Serializable {
+class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsExpander: LevelExpander) {
 
   def findOutliers(inputRDD: PointRDD, k: Int, n: Int, iteration_number: Int): PointRDD = {
 
@@ -31,7 +28,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, maxNumb
     inputRDD.buildIndex(indexType, true)
 
     val originalBounds = inputRDD.boundaryEnvelope
-    val partitions: RDD[IndexNode] = expandLevels(inputRDD, maxNumberOfPartitions)
+    val partitions: RDD[IndexNode] = levelsExpander.expand(inputRDD)
     //    assert(new PointRDD(partitions.flatMap(_.getAllPoints)).countWithoutDuplicates() == inputRDD.countWithoutDuplicates())
 
     println("Before # of Points = " + inputRDD.countWithoutDuplicates())
@@ -104,47 +101,6 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, maxNumb
     Plotter.visualize(inputRDD.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_D", originalBounds, filteredPoints, partitionsList)
 
     candidatePoints
-  }
-
-  private def expandLevels(rdd: PointRDD, maxNumberOfPartitions: Int): RDD[IndexNode] = {
-    val partitionsPerIndex = math.ceil((maxNumberOfPartitions * 1.0) / rdd.getPartitioner.numPartitions)
-
-    val AREA_MAX = rdd.boundaryEnvelope.getArea / 300
-    val AREA_MIN = rdd.boundaryEnvelope.getArea / 3000
-
-    rdd.indexedRDD.rdd
-      .map({
-        case t: Quadtree => IndexNode(t.getRoot)
-        case t: STRtree => IndexNode(t.getRoot)
-      })
-      .filter(_.getPointsCount > 0)
-      .flatMap((initNode: IndexNode) => {
-        var initNodes = List(initNode)
-        var tmpNodes = List[IndexNode]()
-        while (initNodes.nonEmpty && initNodes.size + tmpNodes.size < partitionsPerIndex && initNodes.exists(_.getBounds.getArea > AREA_MAX)) {
-          val (nodesUnderThreshold, nodesAboveThreshold) = initNodes.partition(node => !node.hasChildren || node.getBounds.getArea < AREA_MAX)
-          tmpNodes = tmpNodes ::: nodesUnderThreshold
-          initNodes = nodesAboveThreshold.flatMap(_.getChildren)
-        }
-
-        initNodes = initNodes ::: tmpNodes
-
-        val expander = mutable.PriorityQueue[IndexNode]()(Ordering.by(node => node.getBounds.getArea))
-        initNodes.foreach(expander.enqueue(_))
-
-        var leafNodes: List[IndexNode] = List()
-
-        while (expander.size + leafNodes.size < partitionsPerIndex && expander.nonEmpty) {
-          val top = expander.dequeue()
-          val children = top.getChildren
-          if (children.isEmpty || top.getBounds.getArea <= AREA_MIN) {
-            leafNodes ::= top
-          } else {
-            children.foreach(expander.enqueue(_))
-          }
-        }
-        expander.toList ::: leafNodes
-      }).cache()
   }
 
   private def computeCandidatePartitions(allPartitions: List[PartitionProps], k: Int, n: Int) = {

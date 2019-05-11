@@ -1,18 +1,16 @@
 package knnjoin
 
-import com.vividsolutions.jts.geom.{GeometryFactory, Point}
+import com.vividsolutions.jts.geom.Point
 import org.apache.spark.api.java.JavaPairRDD
-import org.apache.spark.rdd.{PairRDDFunctions, RDD}
-import org.datasyslab.geospark.spatialRDD.SpatialRDD
+import org.datasyslab.geospark.spatialRDD.PointRDD
 
 trait KNNJoinSolver {
   @throws(classOf[Exception])
-  def solve(geometryFactory: GeometryFactory,
-            dataRDD: SpatialRDD[Point],
-            queryRDD: SpatialRDD[Point],
-            k: Int,
-            resultStr:StringBuilder, visualize: Boolean,
-            outputPath: String)
+  def solve(
+             dataRDD: PointRDD,
+             queryRDD: PointRDD,
+             k: Int
+           )
   : JavaPairRDD[Point, Point]
 
 }
