@@ -17,11 +17,14 @@ object OutliersDetectionGeneric {
 
 }
 
-class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsExpander: LevelExpander) {
+class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsExpander: LevelExpander) extends Serializable {
 
-  def findOutliers(inputRDD: PointRDD, k: Int, n: Int, iteration_number: Int): PointRDD = {
+  def findOutliers(inputRDD: PointRDD, k: Int, n: Int, outputPath: String): (Map[String, String], PointRDD) = {
 
-    println(s"Using gridType $gridType, indexType $indexType")
+    var logger = Map.empty[String, String]
+
+    val t0 = System.currentTimeMillis()
+//    println(s"Using gridType $gridType, indexType $indexType")
 
     inputRDD.analyze()
     inputRDD.spatialPartitioning(gridType)
@@ -29,10 +32,12 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
 
     val originalBounds = inputRDD.boundaryEnvelope
     val partitions: RDD[IndexNode] = levelsExpander.expand(inputRDD)
+    val dataCount = inputRDD.spatialPartitionedRDD.count()
     //    assert(new PointRDD(partitions.flatMap(_.getAllPoints)).countWithoutDuplicates() == inputRDD.countWithoutDuplicates())
 
-    println("Before # of Points = " + inputRDD.countWithoutDuplicates())
+//    println("Before # of Points = " + dataCount)
     println("# Partitions before pruning = " + partitions.count())
+    logger += "used_partitions" -> partitions.count().toString
 
     val partitionPropsRDD = partitions.map((node: IndexNode) => {
       val partitionProps = new PartitionProps()
@@ -49,7 +54,8 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     //    val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitions, k, n)
     val candidates = computeCandidatePartitions(partitionPropsRdd.collect().toList, k, n)
 
-    println("# Partitions after  pruning = " + candidates.size)
+//    println("# Partitions after  pruning = " + candidates.size)
+    logger += "partitions_after_pruning" -> candidates.size.toString
 
     val candidatePointsRDD: RDD[Point] = partitions.filter((node: IndexNode) => {
       val currentPartition = new PartitionProps
@@ -71,36 +77,41 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
       })
     })
 
+    candidatePointsRDD.count()
+    filteredPointsRDD.count()
+    logger += "time" -> (System.currentTimeMillis() - t0).toString
+
     val candidatePoints = new PointRDD(candidatePointsRDD)
     val filteredPoints = new PointRDD(filteredPointsRDD)
+    val candidatePointsCount = candidatePoints.rawSpatialRDD.count()
 
-    println("After # of Points = " + candidatePoints.countWithoutDuplicates())
+//    println("After # of Points = " + candidatePointsCount)
 
     Array(candidatePoints, filteredPoints).foreach(rdd => {
       rdd.analyze()
-      try {
-        rdd.spatialPartitioning(gridType)
-        rdd.buildIndex(indexType, true)
-      } catch {
-        case _: Exception =>
-      }
+//      try {
+//        rdd.spatialPartitioning(gridType)
+//        rdd.buildIndex(indexType, true)
+//      } catch {
+//        case _: Exception =>
+//      }
     })
 
     assert(candidatePoints.rawSpatialRDD.count() + filteredPoints.rawSpatialRDD.count() == inputRDD.rawSpatialRDD.count())
 
     if (candidatePoints.countWithoutDuplicates() == inputRDD.countWithoutDuplicates()) {
-      return candidatePoints
+      return (logger, candidatePoints)
     }
 
-    Plotter.visualize(inputRDD.indexedRDD.sparkContext, inputRDD, "Iteration_" + iteration_number + "_A", originalBounds)
+//    Plotter.visualize2(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, "_A", originalBounds)
 
-    Plotter.visualize(inputRDD.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_B", originalBounds)
+//    Plotter.visualize2(outputPath + "_B", inputRDD.indexedRDD.sparkContext, candidatePoints, "_B", originalBounds)
+//
+//    Plotter.visualize2(outputPath + "_C", inputRDD.indexedRDD.sparkContext, candidatePoints, "_C", originalBounds, filteredPoints)
 
-    Plotter.visualize(inputRDD.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_C", originalBounds, filteredPoints)
+    Plotter.visualize2(outputPath + "_D", inputRDD.indexedRDD.sparkContext, candidatePoints, "_D", originalBounds, filteredPoints, partitionsList)
 
-    Plotter.visualize(inputRDD.indexedRDD.sparkContext, candidatePoints, "Iteration_" + iteration_number + "_D", originalBounds, filteredPoints, partitionsList)
-
-    candidatePoints
+    (logger, candidatePoints)
   }
 
   private def computeCandidatePartitions(allPartitions: List[PartitionProps], k: Int, n: Int) = {
@@ -174,6 +185,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     ret.setSize(partition.size)
     ret.upper(partition.upper)
     ret.lower(partition.lower)
+
     ret
   }
 
