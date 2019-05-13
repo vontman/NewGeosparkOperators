@@ -25,7 +25,7 @@ import scala.Tuple2;
 import scala.collection.mutable.StringBuilder;
 
 @SuppressWarnings("Duplicates")
-public class KNNJoinWithCircles implements KNNJoinSolver {
+public class KNNJoinWithCirclesWithReduceByKey implements KNNJoinSolver {
 
     static private Coordinate[] envToCoordinate(Envelope env) {
         return new Coordinate[]{new Coordinate(env.getMinX(), env.getMinY()),
@@ -201,7 +201,7 @@ public class KNNJoinWithCircles implements KNNJoinSolver {
                         return results.iterator();
                     }));
 
-        return reduceResultByGroupByKey(k, resultsRdd).cache();
+        return reduceResultByReduceByKey(k, resultsRdd).cache();
     }
 
     static class PartitionComparator implements Comparator<Tuple2<Envelope, Integer>> {

@@ -1,27 +1,27 @@
 package knnjoin
 
-import com.vividsolutions.jts.geom.Point
+import com.vividsolutions.jts.geom.{GeometryFactory, Point}
 import org.apache.spark.api.java.JavaPairRDD
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialOperator.KNNQuery
-import org.datasyslab.geospark.spatialRDD.PointRDD
-
-import scala.collection.JavaConversions._
+import org.datasyslab.geospark.spatialRDD.SpatialRDD
 
 object KNNJoinNaive extends KNNJoinSolver {
-  override def solve(
-                      dataRDD: PointRDD,
-                      queryRDD: PointRDD,
-                      k: Int
-                    )
-  : JavaPairRDD[Point, Point] = {
+  override def solve(geometryFactory: GeometryFactory,
+                     dataRDD: SpatialRDD[Point],
+                     queryRDD: SpatialRDD[Point],
+                     k: Int,
+                     resultStr: StringBuilder, visualize: Boolean,
+                     outputPath: String)
+  : JavaPairRDD[Point, java.util.List[Point]] = {
     dataRDD.spatialPartitioning(GridType.QUADTREE)
     dataRDD.buildIndex(IndexType.RTREE, false)
     dataRDD.buildIndex(IndexType.RTREE, true)
 
-    val res = queryRDD.rawSpatialRDD.rdd.collect().flatMap(point => {
-      KNNQuery.SpatialKnnQuery(dataRDD, point, k, true).toList.map((point, _))
+    val res = queryRDD.rawSpatialRDD.rdd.collect().map(point => {
+      (point, KNNQuery.SpatialKnnQuery(dataRDD, point, k, true))
     })
+
     JavaPairRDD.fromRDD(dataRDD.rawSpatialRDD.sparkContext.parallelize(res)).cache()
   }
 
