@@ -9,15 +9,18 @@ import org.datasyslab.geospark.spatialRDD.PointRDD
 import scala.util.Random
 
 trait DataGenerationStrategy {
-  def generate(size: Int, range: Int, sc: SparkContext): PointRDD
+
+  def generate(sc: SparkContext, size: Int, range: Int, offset: Double = 0.0): PointRDD = {
+    generate(sc, size, range, range * offset, range * offset)
+  }
+
+  def generate(sc: SparkContext, size: Int, range: Int, xBoundsMin: Double, xBoundsMax: Double): PointRDD
 }
 
 case class GenerateUniformData() extends DataGenerationStrategy {
-  def generate(size: Int, range: Int, sc: SparkContext): PointRDD = {
+  def generate(sc: SparkContext, size: Int, range: Int, xBoundsMin: Double, yBoundsMin: Double): PointRDD = {
     val geometryFactory = new GeometryFactory()
-    val xBoundsMin = Random.nextInt(2 * range / 3)
     val xBoundsMax = xBoundsMin + range
-    val yBoundsMin = Random.nextInt(2 * range / 3)
     val yBoundsMax = yBoundsMin + range
     new PointRDD(
       sc.parallelize(
@@ -33,12 +36,10 @@ case class GenerateUniformData() extends DataGenerationStrategy {
   }
 }
 
-case class GenerateGuassianData() extends DataGenerationStrategy {
-  def generate(size: Int, range: Int, sc: SparkContext): PointRDD = {
+case class GenerateGaussianData() extends DataGenerationStrategy {
+  def generate(sc: SparkContext, size: Int, range: Int, xBoundsMin: Double, yBoundsMin: Double): PointRDD = {
     val geometryFactory = new GeometryFactory()
-    val xBoundsMin = Random.nextInt(2 * range / 3)
     val xBoundsMax = xBoundsMin + range
-    val yBoundsMin = Random.nextInt(2 * range / 3)
     val yBoundsMax = yBoundsMin + range
     new PointRDD(
       sc.parallelize(
@@ -55,11 +56,9 @@ case class GenerateGuassianData() extends DataGenerationStrategy {
 }
 
 case class GenerateExponentialData() extends DataGenerationStrategy {
-  def generate(size: Int, range: Int, sc: SparkContext): PointRDD = {
+  def generate(sc: SparkContext, size: Int, range: Int, xBoundsMin: Double, yBoundsMin: Double): PointRDD = {
     val geometryFactory = new GeometryFactory()
-    val xBoundsMin = Random.nextInt(2 * range / 3)
     val xBoundsMax = xBoundsMin + range
-    val yBoundsMin = Random.nextInt(2 * range / 3)
     val yBoundsMax = yBoundsMin + range
     val lambda = 10
     new PointRDD(
@@ -78,10 +77,8 @@ case class GenerateExponentialData() extends DataGenerationStrategy {
 }
 
 case class GenerateNonUniformData() extends DataGenerationStrategy {
-  def generate(size: Int, range: Int, sc: SparkContext): PointRDD = {
+  def generate(sc: SparkContext, size: Int, range: Int, xBoundsMin: Double, yBoundsMin: Double): PointRDD = {
     val geometryFactory = new GeometryFactory()
-    val xBoundsMin: Double = Random.nextInt(2 * range / 3)
-    val yBoundsMin: Double = Random.nextInt(2 * range / 3)
 
     val regionsCntPerAxis = 8
     var remainingPoints = size
@@ -158,12 +155,10 @@ case class GenerateZipfData(skew: Double) extends DataGenerationStrategy {
     map
   }
 
-  def generate(size: Int, range: Int, sc: SparkContext): PointRDD = {
+  def generate(sc: SparkContext, size: Int, range: Int, xBoundsMin: Double, yBoundsMin: Double): PointRDD = {
     val map = computeMap(size, skew)
     val geometryFactory = new GeometryFactory()
-    val xBoundsMin = Random.nextInt(2 * range / 3)
     val xBoundsMax = xBoundsMin + range
-    val yBoundsMin = Random.nextInt(2 * range / 3)
     val yBoundsMax = yBoundsMin + range
 
     def next: Int = {

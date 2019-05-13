@@ -112,7 +112,7 @@ class GNNBenchmark(sparkContext: SparkContext,
 
         val dataSpatialRDD = {
           val rdd =
-            inputGenerationStrategy.generate(querySize, range, sparkContext)
+            inputGenerationStrategy.generate(sparkContext, querySize, range, Random.nextDouble() * -.4)
           rdd.analyze()
 //          rdd.saveAsGeoJSON(fileBaseName + "query.geojson")
           rdd
@@ -120,7 +120,7 @@ class GNNBenchmark(sparkContext: SparkContext,
 
         val querySpatialRDD = {
           val rdd =
-            queryGenerationStrategy.generate(inputSize, range, sparkContext)
+            queryGenerationStrategy.generate(sparkContext, inputSize, range, Random.nextDouble() * .4)
           rdd.analyze()
 //          rdd.saveAsGeoJSON(fileBaseName + "data.geojson")
           rdd
@@ -275,16 +275,7 @@ class GNNBenchmark(sparkContext: SparkContext,
 object Benchmark {
 
   def main(args: Array[String]): Unit = {
-    Logger.getLogger("org").setLevel(Level.ERROR)
-    Logger.getLogger("akka").setLevel(Level.ERROR)
-    val conf = new SparkConf()
-      .setAppName("GeoSparkRunnableExample")
-      .setMaster("local[*]")
-    conf.set("spark.serializer", classOf[KryoSerializer].getName)
-    conf.set("spark.kryo.registrator",
-             classOf[GeoSparkVizKryoRegistrator].getName)
-
-    val sparkContext = new SparkContext(conf)
+    val sparkContext = SparkRunner.start
     val runId = System.currentTimeMillis()
 //    val runId = "benchmark_qtree_rtree_200k_300k_500k_1m"
 
@@ -298,21 +289,21 @@ object Benchmark {
 
     benchmark.compareGnnSolvers(
       List(
-//        (10000, 10000, 800000, 200),
+        (10000, 10000, 800000, 200)
 //        (50000, 50000, 800000, 100),
 //        (100000, 100000, 800000, 40),
 //        (200000, 200000, 800000, 30),
 //        (10000, 10000, 800000, 30),
 //          (20000, 20000, 800000, 30),
-        (100000, 100000, 800000, 10),
-        (200000, 200000, 800000, 10),
-          (300000, 300000, 800000, 10),
-          (500000, 500000, 800000, 10)
+//        (100000, 100000, 800000, 10),
+//        (200000, 200000, 800000, 10),
+//          (300000, 300000, 800000, 10),
+//          (500000, 500000, 800000, 10)
       ),
       inputGenerationStrategies = List(GenerateUniformData()),
       queryGenerationStrategies = List(
         GenerateUniformData(),
-        GenerateGuassianData(),
+        GenerateGaussianData(),
         GenerateNonUniformData(),
         GenerateExponentialData(),
 //        GenerateZipfData(.8),

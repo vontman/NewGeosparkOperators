@@ -4,22 +4,14 @@ import java.io.File
 import java.util.concurrent.TimeoutException
 
 import com.bizo.mighty.csv.CSVDictWriter
-import com.vividsolutions.jts.geom.Point
-import org.apache.log4j.{Level, Logger}
-import org.apache.spark.SparkConf
-import org.apache.spark.api.java.JavaSparkContext
-import org.apache.spark.serializer.KryoSerializer
-import org.datasyslab.geospark.enums.{FileDataSplitter, GridType, IndexType}
-import org.datasyslab.geospark.spatialRDD.PointRDD
-import org.datasyslab.geosparkviz.core.Serde.GeoSparkVizKryoRegistrator
-import utils.{GenerateExponentialData, GenerateGuassianData, GenerateNonUniformData, GenerateUniformData, GenerateZipfData, Visualization}
+import org.datasyslab.geospark.enums.{GridType, IndexType}
+import utils._
 
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.Random
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent._
-import scala.concurrent.duration._
 
 object OutliersDetectionBenchmark {
 
@@ -37,15 +29,7 @@ object OutliersDetectionBenchmark {
 
   @throws[Exception]
   def main(args: Array[String]): Unit = {
-    Logger.getLogger("org").setLevel(Level.ERROR)
-    Logger.getLogger("akka").setLevel(Level.ERROR)
-    val conf = new SparkConf()
-      .setAppName("GeoSparkRunnableExample")
-      .setMaster("local[*]")
-    conf.set("spark.serializer", classOf[KryoSerializer].getName)
-    conf.set("spark.kryo.registrator",
-      classOf[GeoSparkVizKryoRegistrator].getName)
-    val sc = new JavaSparkContext(conf)
+    val sc = SparkRunner.start()
 
     val outputPath = s"benchmark/${System.currentTimeMillis()}/"
 
@@ -78,7 +62,7 @@ object OutliersDetectionBenchmark {
     for {
       inputGenerationStrategy <- List(
 //                GenerateUniformData(),
-        GenerateGuassianData(),
+        GenerateGaussianData(),
         GenerateExponentialData(),
         GenerateNonUniformData(),
         GenerateZipfData(.75),
@@ -98,7 +82,7 @@ object OutliersDetectionBenchmark {
       iteration <- 1 to maxIterations
 
     } {
-      val dataRDD = inputGenerationStrategy.generate(dataCount, 100000, sc)
+      val dataRDD = inputGenerationStrategy.generate(sc, dataCount, 100000)
 //      val dataRDD = {
 //        val location = "benchmark/1557588114229/2640218211505695195_RTREE_ExpanderWithAreaBounds_.1_10k_.003_.0003_RTREE_100_ 100_GenerateExponentialData_data"
 //        val splitter = FileDataSplitter.GEOJSON
@@ -144,11 +128,11 @@ object OutliersDetectionBenchmark {
               case Some(res) => res
               case None =>
                 dataRDD.saveAsGeoJSON(
-                s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_ ${n}_${inputGenerationStrategy.getClass.getSimpleName}_data"
+                s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_${n}_${inputGenerationStrategy.getClass.getSimpleName}_data"
                 )
                 Visualization.buildScatterPlot(
                   List(dataRDD),
-                  s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_ ${n}_${inputGenerationStrategy.getClass.getSimpleName}_plot"
+                  s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_${n}_${inputGenerationStrategy.getClass.getSimpleName}_plot"
                 )
 
                 (defLog, currDataRDD)
