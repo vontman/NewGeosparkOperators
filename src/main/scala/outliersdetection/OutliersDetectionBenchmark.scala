@@ -61,22 +61,21 @@ object OutliersDetectionBenchmark {
 
     for {
       inputGenerationStrategy <- List(
-//                GenerateUniformData(),
+        GenerateUniformData(),
         GenerateGaussianData(),
         GenerateExponentialData(),
         GenerateNonUniformData(),
         GenerateZipfData(.75),
         GenerateZipfData(.9)
-                )
+      )
 
       (dataCount, n, k, maxIterations) <- List(
-//        (50000, 100, 100, 10)
-                (10000, 100, 100, 20),
-                (50000, 100, 100, 20),
-                (100000, 300, 200, 10),
-                (250000, 300, 300, 10),
-                (500000, 300, 300, 5),
-                (1000000, 500, 700, 3)
+        (10000, 100, 100, 20),
+        (50000, 100, 100, 20),
+        (100000, 300, 200, 10),
+        (250000, 300, 300, 10),
+        (500000, 300, 300, 5),
+        (1000000, 500, 700, 3)
       )
 
       iteration <- 1 to maxIterations
@@ -99,8 +98,7 @@ object OutliersDetectionBenchmark {
         gridType <- List(GridType.QUADTREE, GridType.RTREE)
         indexType = IndexType.QUADTREE
 
-//        (expansionFunction, expanderName) <- ExpanderWithAreaBounds.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
-        (expansionFunction, expanderName) <- ExpanderByTotalPointsRatio.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
+        (expansionFunction, expanderName) <- ExpanderWithAreaBounds.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
 
         solverName = s"${gridType}_${expanderName}"
       } {
@@ -127,17 +125,20 @@ object OutliersDetectionBenchmark {
             ret match {
               case Some(res) => res
               case None =>
-                dataRDD.saveAsGeoJSON(
-                s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_${n}_${inputGenerationStrategy.getClass.getSimpleName}_data"
-                )
-                Visualization.buildScatterPlot(
-                  List(dataRDD),
-                  s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_${n}_${inputGenerationStrategy.getClass.getSimpleName}_plot"
-                )
+                val path =
+                  "$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_${n}_${inputGenerationStrategy.getClass.getSimpleName}"
+                if (!new File(s"${path}_data").exists) {
+                  dataRDD.saveAsGeoJSON(
+                    s"${path}_data"
+                  )
+                  Visualization.buildScatterPlot(
+                    List(dataRDD),
+                    s"${path}_plot"
+                  )
+                }
 
                 (defLog, currDataRDD)
             }
-
 
           }
           val newPointsCount = filteredRDD.rawSpatialRDD.count()
@@ -151,9 +152,10 @@ object OutliersDetectionBenchmark {
               "input_generation_strategy" -> inputGenerationStrategy.getClass.getSimpleName,
               "gridType" -> gridType.toString,
               "indexType" -> indexType.toString,
-              s"iteration_${iter}_used_partitions" -> logs.getOrElse("used_partitions", "0"),
-              s"iteration_${iter}_partitions_after_pruning" -> logs.getOrElse(
-                "partitions_after_pruning", "0"),
+              s"iteration_${iter}_used_partitions" -> logs
+                .getOrElse("used_partitions", "0"),
+              s"iteration_${iter}_partitions_after_pruning" -> logs
+                .getOrElse("partitions_after_pruning", "0"),
               s"iteration_${iter}_points_after_pruning" -> newPointsCount.toString,
               s"iteration_${iter}_pruning_percentage" -> (100.0 * (dataCount - newPointsCount) / dataCount).toString,
               s"iteration_${iter}_time" -> logs.getOrElse("time", "120000")
