@@ -82,7 +82,7 @@ case class QuadtreeNode(node: NodeBase) extends IndexNode {
       .withFilter(_.size() > 0)
       .map(IndexNode(_)).toList
 
-    if (node.getItems.size() != 0) {
+    if (children.nonEmpty && node.getItems.size() != 0) {
       val env = {
         val env = new Envelope()
         val initPoint = node.getItems.head.asInstanceOf[Point]
