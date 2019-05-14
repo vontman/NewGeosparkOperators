@@ -1,7 +1,6 @@
 package outliersdetection
 
 
-import util.control.Breaks._
 import com.vividsolutions.jts.index.quadtree.Quadtree
 import com.vividsolutions.jts.index.strtree.STRtree
 import org.apache.spark.rdd.RDD
@@ -58,7 +57,7 @@ class ExpanderWithAreaBounds(
         var initNodes = List[IndexNode](initNode)
         var tmpNodes = List[IndexNode]()
 
-        while(initNodes.size + tmpNodes.size < numberOfPartitions && initNodes.nonEmpty) {
+        while (initNodes.size + tmpNodes.size < numberOfPartitions && initNodes.nonEmpty) {
           val head = initNodes.head
           initNodes = initNodes.tail
           val children = head.getChildren
@@ -70,14 +69,14 @@ class ExpanderWithAreaBounds(
         }
 
         initNodes = initNodes ::: tmpNodes
-//        println("First Stage " + initNodes.size)
+        //        println("First Stage " + initNodes.size)
 
         val expander = mutable.PriorityQueue[IndexNode]()(Ordering.by(comparator))
         initNodes.foreach(expander.enqueue(_))
 
         var leafNodes: List[IndexNode] = List()
 
-        while(expander.size + leafNodes.size < numberOfPartitions && expander.nonEmpty) {
+        while (expander.size + leafNodes.size < numberOfPartitions && expander.nonEmpty) {
           val top = expander.dequeue()
           val children = top.getChildren
           if (children.isEmpty || top.getBounds.getArea <= minAreaRatio * area) {
@@ -87,7 +86,7 @@ class ExpanderWithAreaBounds(
           }
         }
 
-//        println("SecondStage " + (expander.size + leafNodes.size))
+        //        println("SecondStage " + (expander.size + leafNodes.size))
         expander.toList ::: leafNodes
 
       }).cache()

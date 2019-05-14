@@ -4,8 +4,9 @@ import java.awt.Color
 import java.awt.image.BufferedImage
 import java.nio.file.Paths
 
-import com.vividsolutions.jts.geom.{Coordinate, Envelope, GeometryFactory}
+import com.vividsolutions.jts.geom.{Coordinate, Envelope, GeometryFactory, Point}
 import org.apache.spark.api.java.JavaSparkContext
+import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialRDD.{PointRDD, PolygonRDD}
 import org.datasyslab.geosparkviz.core.ImageGenerator
 import org.datasyslab.geosparkviz.extension.visualizationEffect.ScatterPlot
@@ -14,7 +15,11 @@ import org.datasyslab.geosparkviz.utils.ImageType
 object Plotter {
   val geometryFactory: GeometryFactory = new GeometryFactory()
 
-  def visualizeNaiive(sc: JavaSparkContext, pointRDD: PointRDD, plotName: String): Unit = {
+  def visualizeNaiive(sc: JavaSparkContext, boundryEnvelope: Envelope, ans: List[Point], plotName: String): Unit = {
+    val pointRDD = new PointRDD(sc.parallelize(ans))
+    pointRDD.analyze()
+    pointRDD.spatialPartitioning(GridType.RTREE)
+    pointRDD.buildIndex(IndexType.RTREE, true)
 
     val scatterOutput = Paths.get("visualization/outliers", plotName).toString
 
@@ -22,7 +27,7 @@ object Plotter {
     val resX = 200
     val resY = 200
 
-    val dataOperator = new ScatterPlot(resX, resY, pointRDD.boundaryEnvelope, false, false)
+    val dataOperator = new ScatterPlot(resX, resY, boundryEnvelope, false, false)
     dataOperator.CustomizeColor(255, 255, 255, 255, Color.RED, true)
     dataOperator.Visualize(sc, pointRDD)
 
@@ -48,15 +53,14 @@ object Plotter {
   }
 
 
-
-    def visualize2(scatterOutput: String,
-                   sc: JavaSparkContext,
-                candidatePoints: PointRDD,
-                plotName: String,
-                totalPlotBounds: Envelope,
-                filteredPoints: PointRDD = null,
-                partitions: List[PartitionProps] = null
-                  ): Unit = {
+  def visualize2(scatterOutput: String,
+                 sc: JavaSparkContext,
+                 candidatePoints: PointRDD,
+                 plotName: String,
+                 totalPlotBounds: Envelope,
+                 filteredPoints: PointRDD = null,
+                 partitions: List[PartitionProps] = null
+                ): Unit = {
 
 
     val resX = 200

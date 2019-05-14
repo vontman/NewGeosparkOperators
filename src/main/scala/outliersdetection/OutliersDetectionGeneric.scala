@@ -24,7 +24,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     var logger = Map.empty[String, String]
 
     val t0 = System.currentTimeMillis()
-//    println(s"Using gridType $gridType, indexType $indexType")
+    //    println(s"Using gridType $gridType, indexType $indexType")
 
     inputRDD.analyze()
     inputRDD.spatialPartitioning(gridType)
@@ -89,25 +89,26 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
 
     Array(candidatePoints, filteredPoints).foreach(rdd => {
       rdd.analyze()
-//      try {
-//        rdd.spatialPartitioning(gridType)
-//        rdd.buildIndex(indexType, true)
-//      } catch {
-//        case _: Exception =>
-//      }
+      //      try {
+      //        rdd.spatialPartitioning(gridType)
+      //        rdd.buildIndex(indexType, true)
+      //      } catch {
+      //        case _: Exception =>
+      //      }
     })
 
-    assert(candidatePoints.rawSpatialRDD.count() + filteredPoints.rawSpatialRDD.count() == inputRDD.rawSpatialRDD.count())
+    println(s"candidates count = ${candidatePoints.approximateTotalCount}, filtered count = ${filteredPoints.approximateTotalCount}, total count = ${inputRDD.approximateTotalCount}")
+    assert(candidatePoints.approximateTotalCount + filteredPoints.approximateTotalCount == inputRDD.approximateTotalCount)
 
     if (candidatePoints.countWithoutDuplicates() == inputRDD.countWithoutDuplicates()) {
       return (logger, candidatePoints)
     }
 
-//    Plotter.visualize2(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, "_A", originalBounds)
+    //    Plotter.visualize2(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, "_A", originalBounds)
 
-//    Plotter.visualize2(outputPath + "_B", inputRDD.indexedRDD.sparkContext, candidatePoints, "_B", originalBounds)
-//
-//    Plotter.visualize2(outputPath + "_C", inputRDD.indexedRDD.sparkContext, candidatePoints, "_C", originalBounds, filteredPoints)
+    //    Plotter.visualize2(outputPath + "_B", inputRDD.indexedRDD.sparkContext, candidatePoints, "_B", originalBounds)
+    //
+    //    Plotter.visualize2(outputPath + "_C", inputRDD.indexedRDD.sparkContext, candidatePoints, "_C", originalBounds, filteredPoints)
 
     Plotter.visualize2(outputPath + "_D", inputRDD.indexedRDD.sparkContext, candidatePoints, "_D", originalBounds, filteredPoints, partitionsList)
 
