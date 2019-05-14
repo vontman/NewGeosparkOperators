@@ -126,7 +126,7 @@ object OutliersDetectionBenchmark {
               case Some(res) => res
               case None =>
                 val path =
-                  "$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_${n}_${inputGenerationStrategy.getClass.getSimpleName}"
+                  s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_${n}_${inputGenerationStrategy.getClass.getSimpleName}"
                 if (!new File(s"${path}_data").exists) {
                   dataRDD.saveAsGeoJSON(
                     s"${path}_data"
