@@ -14,10 +14,17 @@ object OutliersDetectionNaiive {
     rdd.indexedRDD.cache()
 
     val data = rdd.spatialPartitionedRDD.rdd.cache()
-    println("Executing native outliers detection")
+    println("Executing naiive outliers detection")
 
     data.collect().flatMap(point => {
       KNNQuery.SpatialKnnQuery(rdd, point, k, true).map(p2 => (point.distance(p2), point))
     }).sortBy(_._1).takeRight(n).map(x => x._2).toList
+
+    //    val resRDD = new KNNJoinWithCirclesWithReduceByKey().solve(new GeometryFactory(), rdd, rdd, k, null, false, "")
+    //    resRDD.rdd
+    //      .map({case (p, knn) => (p, knn.map(p.distance).max)})
+    //      .takeOrdered(n)(Ordering.by[(Point, Double), Double](_._2).reverse)
+    //      .map(_._1)
+    //      .toList
   }
 }

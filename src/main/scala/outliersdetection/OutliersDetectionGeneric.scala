@@ -1,14 +1,10 @@
 package outliersdetection
 
-import java.util
-
 import com.vividsolutions.jts.geom.{Envelope, Point}
 import org.apache.spark.rdd.RDD
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialRDD.PointRDD
 import utils.IndexNode
-
-import scala.collection.JavaConversions._
 
 object OutliersDetectionGeneric {
   def apply(gridType: GridType, indexType: IndexType, levelsExpander: LevelExpander): OutliersDetectionGeneric = {
@@ -19,7 +15,7 @@ object OutliersDetectionGeneric {
 
 class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsExpander: LevelExpander) extends Serializable {
 
-  def findOutliers(inputRDD: PointRDD, k: Int, n: Int, outputPath: String): (Map[String, String], PointRDD) = {
+  def findOutliers(originalBounds: Envelope, inputRDD: PointRDD, k: Int, n: Int, outputPath: String): (Map[String, String], PointRDD) = {
 
     var logger = Map.empty[String, String]
 
@@ -30,7 +26,6 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     inputRDD.spatialPartitioning(gridType)
     inputRDD.buildIndex(indexType, true)
 
-    val originalBounds = inputRDD.boundaryEnvelope
     val partitions: RDD[IndexNode] = levelsExpander.expand(inputRDD)
     val dataCount = inputRDD.spatialPartitionedRDD.count()
     //    assert(new PointRDD(partitions.flatMap(_.getAllPoints)).countWithoutDuplicates() == inputRDD.countWithoutDuplicates())
@@ -107,8 +102,8 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     //    Plotter.visualize2(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, "_A", originalBounds)
 
     //    Plotter.visualize2(outputPath + "_B", inputRDD.indexedRDD.sparkContext, candidatePoints, "_B", originalBounds)
-    //
-    //    Plotter.visualize2(outputPath + "_C", inputRDD.indexedRDD.sparkContext, candidatePoints, "_C", originalBounds, filteredPoints)
+
+    Plotter.visualize2(outputPath + "_C", inputRDD.indexedRDD.sparkContext, candidatePoints, "_C", originalBounds, filteredPoints)
 
     Plotter.visualize2(outputPath + "_D", inputRDD.indexedRDD.sparkContext, candidatePoints, "_D", originalBounds, filteredPoints, partitionsList)
 
@@ -138,16 +133,17 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
 
     allPartitions.filter((currentPartition: PartitionProps) => {
       currentPartition.upper >= minDkDist
-    }).flatMap((currentPartition: PartitionProps) => {
-      val ret = new util.HashSet[PartitionProps]()
-      ret.addAll(
-        allPartitions
-          .filter(p => !p.equals(currentPartition))
-          .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
-      )
-      ret.add(currentPartition)
-      ret
-    }).toSet
+    })
+    //      .flatMap((currentPartition: PartitionProps) => {
+    //      val ret = new util.HashSet[PartitionProps]()
+    //      ret.addAll(
+    //        allPartitions
+    //          .filter(p => !p.equals(currentPartition))
+    //          .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
+    //      )
+    //      ret.add(currentPartition)
+    //      ret
+    //    }).toSet
   }
 
   private def computeLowerUpper(allPartitions: List[PartitionProps], partition: PartitionProps, k: Int): PartitionProps = {
