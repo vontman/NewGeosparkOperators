@@ -3,70 +3,87 @@ package outliersdetection
 
 import java.io.File
 
-import org.apache.log4j.{Level, Logger}
-import org.apache.spark.SparkConf
-import org.apache.spark.api.java.JavaSparkContext
-import org.apache.spark.serializer.KryoSerializer
 import org.datasyslab.geospark.enums.{GridType, IndexType}
-import org.datasyslab.geosparkviz.core.Serde.GeoSparkVizKryoRegistrator
-import utils.GenerateUniformData
+import org.datasyslab.geospark.spatialOperator.KNNQuery
+import utils.{GenerateExponentialData, GenerateGaussianData, GenerateNonUniformData, GenerateUniformData, SparkRunner}
 
 import scala.collection.JavaConversions._
 import scala.language.postfixOps
+import scala.util.Random
 
 object OutliersDetectionRunner {
 
   @throws[Exception]
   def main(args: Array[String]): Unit = {
-    Logger.getLogger("org").setLevel(Level.ERROR)
-    Logger.getLogger("akka").setLevel(Level.ERROR)
-    val conf = new SparkConf().setAppName("GeoSparkRunnableExample").setMaster("local[*]")
-    conf.set("spark.serializer", classOf[KryoSerializer].getName)
-    conf.set("spark.kryo.registrator", classOf[GeoSparkVizKryoRegistrator].getName)
-    val sc = new JavaSparkContext(conf)
+    val sc = SparkRunner.start()
     deleteOldValidation()
-    val data = GenerateUniformData().generate(sc, 10000, 800000)
+    for (_ <- 0 until 100) {
+      val data = GenerateUniformData().generate(sc, 10000, 800000)
 
-    val n = 100
-    val k = 100
+      val n = 50
+      val k = 50
 
-    data.analyze
-    var nextRdd = data
-    var prevCount = 0L
-    var nextCount = 0L
-    var pruningIteration = 1
+      data.analyze
+      var nextRdd = data
+      var prevCount = 0L
+      var nextCount = 0L
+      var pruningIteration = 1
 
-    data.spatialPartitioning(GridType.RTREE)
-    data.buildIndex(IndexType.RTREE, true)
-    val ans = OutliersDetectionNaiive.findOutliersNaive(data, k, n)
-    println(s"Finished Naiive Execution and found ${ans.size} outliers")
-    Plotter.visualizeNaiive(sc, data.boundaryEnvelope, ans, "natiive")
+      Array(
+//        new ExpanderByTotalPointsRatio(0.2, 5000)
+//        new ExpanderWithAreaBounds(0.2, 30000, 1.0 / 300, 1.0 / 5000, x => x.getBounds.getArea)
+      new ExpanderWithAreaBounds(0.2, 30000, 1.0 / 300, 1.0 / 5000, x => x.getPointsCount * 1.0 / x.getBounds.getArea)
+//        new ExpanderByPointsRatioPerGrid(0.2, 30000, x => x.getPointsCount * 1.0 / x.getBounds.getArea)
+      ).foreach(expander => {
+        println(expander.getClass.getName)
+        for (_ <- 0 to 1) {
+          prevCount = nextRdd.countWithoutDuplicates
+          nextRdd = OutliersDetectionGeneric(GridType.QUADTREE, IndexType.QUADTREE, expander).findOutliers(nextRdd, n, k, s"visualization/${expander.getClass.getName}/$pruningIteration")._2
+          nextCount = nextRdd.countWithoutDuplicates
+          println("Pruning = " + ((1.0 * data.countWithoutDuplicates - nextCount) / data.countWithoutDuplicates * 100.0) + "\n")
+
+          pruningIteration += 1
+        }
+        if (nextRdd.rawSpatialRDD.count() < data.countWithoutDuplicates()) {
+
+          data.spatialPartitioning(GridType.RTREE)
+          data.buildIndex(IndexType.RTREE, true)
+          data.buildIndex(IndexType.RTREE, false)
+
+          val possibleAns = nextRdd.rawSpatialRDD.collect().toList
+          val ans = OutliersDetectionNaiveWithKNNJoin.findOutliersNaive(data, k, n)
+          println(s"Finished Naiive Execution and found ${ans.size} outliers")
+          Plotter.visualizeNaiive(sc, data.boundaryEnvelope, ans, "natiive")
 
 
-    Array(
-      //      new ExpanderByTotalPointsRatio(0.1, 5000),
-      new ExpanderWithAreaBounds(0.1, 30000, 1.0 / 300, 1.0 / 5000, _.getBounds.getArea),
-      new ExpanderByPointsRatioPerGrid(0.1, 30000, x => x.getPointsCount * 1.0 / x.getBounds.getArea)
-    ).foreach(expander => {
-      for (_ <- 0 to 1) {
-        prevCount = nextRdd.countWithoutDuplicates
-        nextRdd = OutliersDetectionGeneric(GridType.QUADTREE, IndexType.QUADTREE, expander).findOutliers(nextRdd, n, k, s"visualization/${expander.getClass.getName}/$pruningIteration")._2
-        nextCount = nextRdd.countWithoutDuplicates
-        println("Pruning = " + ((1.0 * data.countWithoutDuplicates - nextCount) / data.countWithoutDuplicates * 100.0) + "\n")
+          println(if (possibleAns.containsAll(ans)) {
+            "VALID"
+          }
+          else {
+            data.saveAsGeoJSON(s"invalid_pruning/${Random.nextLong()}_data_geojson")
+            "INVALID"
 
-        pruningIteration += 1
-      }
+          })
 
+          val customAns = ans.map(p => {
+            KNNQuery.SpatialKnnQuery(data, p, k, true).map(p2 => p.distance(p2)).max
+          })
+          val customPossibleAns = OutliersDetectionNaiveWithKNNJoin.findOutliersNaive2(nextRdd, k, n, data).map(p => {
+            KNNQuery.SpatialKnnQuery(data, p, k, true).map(p2 => p.distance(p2)).max
+          })
 
-      val possibleAns = nextRdd.rawSpatialRDD.collect().toList
+          println(
+            if (customAns.forall(x => customPossibleAns.exists(y => math.abs(x - y) < 1e-6))) {
+              "VALID2"
+            }
+            else {
+              "INVALID2" + ", \n" + customAns.sorted.mkString(",") + "\n" + customPossibleAns.sorted.mkString(",")
+            }
+          )
+        }
 
-      println(if (possibleAns.containsAll(ans)) {
-        "VALID"
-      }
-      else {
-        "INVALID"
       })
-    })
+    }
 
     //    val ans =
     //      new PointRDD(sc.parallelize(new KNNJoinWithCircles().solve(nextRdd, nextRdd, k)

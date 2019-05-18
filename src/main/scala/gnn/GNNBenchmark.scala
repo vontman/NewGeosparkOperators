@@ -112,7 +112,10 @@ class GNNBenchmark(sparkContext: SparkContext,
 
         val dataSpatialRDD = {
           val rdd =
-            inputGenerationStrategy.generate(sparkContext, querySize, range, Random.nextDouble() * -.4)
+            inputGenerationStrategy.generate(sparkContext,
+                                             querySize,
+                                             range,
+                                             Random.nextDouble() * -.4)
           rdd.analyze()
 //          rdd.saveAsGeoJSON(fileBaseName + "query.geojson")
           rdd
@@ -120,7 +123,10 @@ class GNNBenchmark(sparkContext: SparkContext,
 
         val querySpatialRDD = {
           val rdd =
-            queryGenerationStrategy.generate(sparkContext, inputSize, range, Random.nextDouble() * .4)
+            queryGenerationStrategy.generate(sparkContext,
+                                             inputSize,
+                                             range,
+                                             Random.nextDouble() * .4)
           rdd.analyze()
 //          rdd.saveAsGeoJSON(fileBaseName + "data.geojson")
           rdd
@@ -158,7 +164,8 @@ class GNNBenchmark(sparkContext: SparkContext,
           // invoke garbage collector
           runtime.gc()
 
-          println(s"Starting $iter/$iterationsCount $solverName ${queryGenerationStrategy.getClass.getSimpleName}")
+          println(
+            s"Starting $iter/$iterationsCount $solverName ${queryGenerationStrategy.getClass.getSimpleName}")
           val t0 = System.currentTimeMillis()
           val (logs, res, timeElapsed) = runWithTimeout(TIMEOUT) {
             val res = solver.solve(geometryFactory,
@@ -275,7 +282,7 @@ class GNNBenchmark(sparkContext: SparkContext,
 object Benchmark {
 
   def main(args: Array[String]): Unit = {
-    val sparkContext = SparkRunner.start
+    val sparkContext = SparkRunner.start()
     val runId = System.currentTimeMillis()
 //    val runId = "benchmark_qtree_rtree_200k_300k_500k_1m"
 
@@ -289,8 +296,8 @@ object Benchmark {
 
     benchmark.compareGnnSolvers(
       List(
-        (10000, 10000, 800000, 200)
-//        (50000, 50000, 800000, 100),
+        (100000, 100000, 800000, 20)
+//        (50000, 50000, 800000, 5),
 //        (100000, 100000, 800000, 40),
 //        (200000, 200000, 800000, 30),
 //        (10000, 10000, 800000, 30),
@@ -314,8 +321,9 @@ object Benchmark {
         //                      (GNNApprox, "ApproxGNN"),
 //                  (NaiveGNN, "GNN_Naive"),
 //        (GNNWithPruning, "GNN_Pruning")
-          (GNNWithPruning(GridType.QUADTREE, IndexType.QUADTREE), "GNN_Pruning_quadtree"),
-            (GNNWithPruning(GridType.RTREE, IndexType.RTREE), "GNN_Pruning_rtree")
+        (GNNWithPruning(GridType.RTREE, IndexType.RTREE), "GNN_Pruning_rtree")
+//        (GNNWithPruning(GridType.QUADTREE, IndexType.QUADTREE),
+//         "GNN_Pruning_quadtree")
       )
     )
 

@@ -1,10 +1,14 @@
 package utils
 
+import java.util
+
 import com.vividsolutions.jts.geom.{Envelope, Point}
 import com.vividsolutions.jts.index.quadtree.NodeBase
+import com.vividsolutions.jts.index.strtree.STRtree.STRtreeNode
 import com.vividsolutions.jts.index.strtree.{AbstractNode, Boundable, ItemBoundable}
 
 import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 
 object IndexNode {
   def apply(node: NodeBase): IndexNode = QuadtreeNode(node)
@@ -34,20 +38,29 @@ case class RtreeNode(node: Boundable) extends IndexNode {
   override def getPointsCount: Int = node.pointsCount()
 
   override def getChildren: List[IndexNode] = node match {
-    case abstractNode: AbstractNode =>
-//      if (abstractNode.getLevel == 0) {
-////        List(IndexNode(abstractNode))
-//        List()
-//      } else {
-      abstractNode.getChildBoundables
-        .view
-        .map(_.asInstanceOf[Boundable])
-        .withFilter(_.pointsCount() > 0)
-        .map(IndexNode(_))
-        .toList
-//      }
-    case item: ItemBoundable =>
-      List(IndexNode(item))
+    case abstractNode: AbstractNode => {
+      if (abstractNode.getLevel == 0) {
+        List()
+      } else {
+        val allChildren = abstractNode.getChildBoundables.view.map(_.asInstanceOf[Boundable]).filter(_.pointsCount() > 0)
+        val (itemBoundableChildren, abstractNodeChildren) = allChildren.partition(_.isInstanceOf[ItemBoundable])
+
+        if (abstractNodeChildren.isEmpty) {
+          List()
+        }
+        else if (itemBoundableChildren.nonEmpty) {
+          val extraNodes = new STRtreeNode(0)
+          itemBoundableChildren.foreach(extraNodes.addChildBoundable)
+
+          IndexNode(extraNodes) :: abstractNodeChildren.map(IndexNode(_)).toList
+        } else {
+          abstractNodeChildren.map(IndexNode(_)).toList
+        }
+
+      }
+    }
+    case _: ItemBoundable =>
+      List()
   }
 
   override def getAllPoints: List[Point] = node.getPoints.toList
@@ -58,12 +71,12 @@ case class RtreeNode(node: Boundable) extends IndexNode {
 
   override def hasChildren: Boolean = node match {
     case abstractNode: AbstractNode =>
-//      if (abstractNode.getLevel == 0) {
-//        false
-//      } else {
+      if (abstractNode.getLevel == 0) {
+        false
+      } else {
         abstractNode.getChildBoundables
           .exists(_.asInstanceOf[Boundable].pointsCount() > 0)
-//      }
+      }
     case _: ItemBoundable =>
       false
   }

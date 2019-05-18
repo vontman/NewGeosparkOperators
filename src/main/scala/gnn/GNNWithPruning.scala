@@ -46,7 +46,7 @@ class GNNWithPruning(gridType: GridType, indexType: IndexType)
 
     val nextLevelQueryRDD = queryRDD
       .flatMap(node => {
-        val children = node.getChildren.filter(_.getPointsCount > 10)
+        val children = node.getChildren
         if (children.isEmpty) {
           List(node)
         } else {
@@ -183,7 +183,7 @@ class GNNWithPruning(gridType: GridType, indexType: IndexType)
     val queryPointsCount = querySpatialRdd.countWithoutDuplicates()
     var usedQueryBounds = 0L
     while (level < MAX_LEVELS && (level < 5 || currQueryRDD
-             .count() != usedQueryBounds) && usedQueryBounds < queryPointsCount / 10) {
+             .count() != usedQueryBounds) && currQueryRDD.count() < queryPointsCount / 10) {
       level += 1
       val t0 = System.currentTimeMillis()
 
