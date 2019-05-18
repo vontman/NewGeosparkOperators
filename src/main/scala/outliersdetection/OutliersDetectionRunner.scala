@@ -33,10 +33,10 @@ object OutliersDetectionRunner {
       data.buildIndex(IndexType.RTREE, true)
 
       Array(
-        //        new ExpanderByTotalPointsRatio(0.3, 5000)
-        new ExpanderByPointsRatioPerGrid(0.5, 1000, x => x.getBounds.getArea)
-        //        new ExpanderWithAreaBounds(0.4, 5000, 1.0 / 300, 1.0 / 5000, indexNode => indexNode.getBounds.getArea)
-      ).foreach(expander => {
+        //        new ExpanderByTotalPointsRatio(0.3, 5000),
+        //new ExpanderByPointsRatioPerGrid(0.7, 7000, x => x.getBounds.getArea),
+          new ExpanderWithAreaBounds(0.7, 7000, 1.0 / 300, 1.0 / 5000,  indexNode => indexNode.getPointsCount / indexNode.getBounds.getArea)
+          ).foreach(expander => {
         //        for (_ <- 0 until 1) {
         prevCount = nextRdd.countWithoutDuplicates
         nextRdd = OutliersDetectionGeneric(GridType.RTREE, IndexType.RTREE, expander).findOutliers(originalBounds, nextRdd, n, k, s"visualization/$iter/${expander.getClass.getSimpleName}_$pruningIteration")._2

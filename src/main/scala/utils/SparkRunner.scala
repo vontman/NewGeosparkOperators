@@ -12,7 +12,7 @@ object SparkRunner {
     Logger.getLogger("akka").setLevel(Level.ERROR)
     val conf = new SparkConf()
       .setAppName("GeoSparkRunnableExample")
-      .setMaster("local[*]")
+//      .setMaster("local[*]")
     conf.set("spark.serializer", classOf[KryoSerializer].getName)
     conf.set("spark.kryo.registrator",
       classOf[GeoSparkVizKryoRegistrator].getName)
