@@ -15,7 +15,7 @@ object OutliersDetectionGeneric {
 
 class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsExpander: LevelExpander) extends Serializable {
 
-  def findOutliers(originalBounds: Envelope, inputRDD: PointRDD, k: Int, n: Int, outputPath: String): (Map[String, String], PointRDD) = {
+  def findOutliers(originalBounds: Envelope, inputRDD: PointRDD, n: Int, k: Int, outputPath: String): (Map[String, String], PointRDD) = {
 
     var logger = Map.empty[String, String]
 
@@ -28,7 +28,14 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
 
     val partitions: RDD[IndexNode] = levelsExpander.expand(inputRDD)
     val dataCount = inputRDD.spatialPartitionedRDD.count()
-    //    assert(new PointRDD(partitions.flatMap(_.getAllPoints)).countWithoutDuplicates() == inputRDD.countWithoutDuplicates())
+
+    try {
+      assert(partitions.flatMap(_.getAllPoints).collect.count(_ => true) == inputRDD.approximateTotalCount)
+    } catch {
+      case e: AssertionError =>
+        println(s"Expanded rdd: ${new PointRDD(partitions.flatMap(_.getAllPoints)).approximateTotalCount}, input rdd: ${inputRDD.approximateTotalCount}")
+        sys.exit(-1)
+    }
 
     println("Before # of Points = " + dataCount)
     println("# Partitions before pruning = " + partitions.count())
@@ -42,12 +49,12 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
       partitionProps
     }).cache()
 
+    assert(partitionPropsRDD.map(_.size).sum == inputRDD.approximateTotalCount)
+
     val partitionsList = partitionPropsRDD.collect().toList
+    val partitionPropsAnalyzed = partitionPropsRDD.map(computeLowerUpper(partitionsList, _, k))
 
-    val partitionPropsRdd = partitionPropsRDD.map(computeLowerUpper(partitionsList, _, k)).sortBy(-_.lower).cache()
-
-    //    val candidates: Iterable[PartitionProps] = computeCandidatePartitions(partitions, k, n)
-    val candidates = computeCandidatePartitions(partitionPropsRdd.collect().toList, k, n)
+    val candidates: Set[PartitionProps] = computeCandidatePartitions(partitionPropsAnalyzed, n).collect.toSet
 
     println("# Partitions after  pruning = " + candidates.size)
     logger += "partitions_after_pruning" -> candidates.size.toString
@@ -56,24 +63,14 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
       val currentPartition = new PartitionProps
       currentPartition.setEnvelop(node.getBounds)
       candidates.contains(currentPartition)
-    }).mapPartitions((indices: Iterator[IndexNode]) => {
-      indices.flatMap((node: IndexNode) => {
-        node.getAllPoints
-      })
-    })
+    }).mapPartitions(_.flatMap(_.getAllPoints))
 
     val filteredPointsRDD: RDD[Point] = partitions.filter((node: IndexNode) => {
       val currentPartition = new PartitionProps
       currentPartition.setEnvelop(node.getBounds)
       !candidates.contains(currentPartition)
-    }).mapPartitions((indices: Iterator[IndexNode]) => {
-      indices.flatMap((node: IndexNode) => {
-        node.getAllPoints
-      })
-    })
+    }).mapPartitions(_.flatMap(_.getAllPoints))
 
-    candidatePointsRDD.count()
-    filteredPointsRDD.count()
     logger += "time" -> (System.currentTimeMillis() - t0).toString
 
     val candidatePoints = new PointRDD(candidatePointsRDD)
@@ -95,62 +92,53 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     println(s"candidates count = ${candidatePoints.approximateTotalCount}, filtered count = ${filteredPoints.approximateTotalCount}, total count = ${inputRDD.approximateTotalCount}")
     assert(candidatePoints.approximateTotalCount + filteredPoints.approximateTotalCount == inputRDD.approximateTotalCount)
 
-    if (candidatePoints.countWithoutDuplicates() == inputRDD.countWithoutDuplicates()) {
+    if (candidatePoints.approximateTotalCount == inputRDD.approximateTotalCount) {
       return (logger, candidatePoints)
     }
 
-    //    Plotter.visualize2(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, "_A", originalBounds)
+    //    Plotter.visualize(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, originalBounds, null)
 
-    //    Plotter.visualize2(outputPath + "_B", inputRDD.indexedRDD.sparkContext, candidatePoints, "_B", originalBounds)
+    //    Plotter.visualize(outputPath + "_B", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds)
 
-    Plotter.visualize2(outputPath + "_C", inputRDD.indexedRDD.sparkContext, candidatePoints, "_C", originalBounds, filteredPoints)
+    Plotter.visualize(outputPath + "_C", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds, filteredPoints)
 
-    Plotter.visualize2(outputPath + "_D", inputRDD.indexedRDD.sparkContext, candidatePoints, "_D", originalBounds, filteredPoints, partitionsList)
+    Plotter.visualize(outputPath + "_D", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds, filteredPoints, partitionsList)
 
     (logger, candidatePoints)
   }
 
-  private def computeCandidatePartitions(allPartitions: List[PartitionProps], k: Int, n: Int) = {
-    //    //    allPartitions.foreach(partition => computeLowerUpper(allPartitions, partition, k))
-    //
-    //    val futurePartitions = allPartitions.map(p => Future {
-    //      computeLowerUpper(allPartitions, p, k)
-    //    })
-    //    futurePartitions.foreach(f => {
-    //      Await.ready(f, 100 second)
-    //    })
-
+  private def computeCandidatePartitions(allPartitions: RDD[PartitionProps], n: Int): RDD[PartitionProps] = {
     var pointsToTake = n
-    //    val minDkDist = allPartitions.sortBy(p => -p.lower).takeWhile(p => {
-    val minDkDist = allPartitions.takeWhile(p => {
+
+    val minDkDist = allPartitions
+      .sortBy(_.lower, ascending = false)
+      .collect.takeWhile(p => {
       if (pointsToTake > 0) {
         pointsToTake -= p.size
         true
       } else {
         false
       }
-    }).map(p => p.lower).min
+    }).map(_.lower).min
 
     allPartitions.filter((currentPartition: PartitionProps) => {
       currentPartition.upper >= minDkDist
     })
     //      .flatMap((currentPartition: PartitionProps) => {
-    //      val ret = new util.HashSet[PartitionProps]()
-    //      ret.addAll(
-    //        allPartitions
-    //          .filter(p => !p.equals(currentPartition))
-    //          .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
-    //      )
-    //      ret.add(currentPartition)
-    //      ret
+    //      allPartitions
+    //        .filter(p => !p.equals(currentPartition))
+    //        .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
     //    }).toSet
   }
 
   private def computeLowerUpper(allPartitions: List[PartitionProps], partition: PartitionProps, k: Int): PartitionProps = {
+    val analyzedPartition = new PartitionProps
+    analyzedPartition.setEnvelop(partition.envelop)
+    analyzedPartition.setSize(partition.size)
+
     var knnVal = k
-    partition.lower(
-      allPartitions
-        .sortBy(p => getMinDist(partition.envelop, p.envelop))
+    analyzedPartition.lower(
+      allPartitions.sortBy(p => getMinDist(partition.envelop, p.envelop))
         .takeWhile(p => {
           if (knnVal > 0) {
             knnVal -= p.size
@@ -158,15 +146,13 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
           } else {
             false
           }
-        })
-        .map(p => getMinDist(partition.envelop, p.envelop)).max
+        }).map(p => getMinDist(partition.envelop, p.envelop)).max
     )
 
 
     knnVal = k
-    partition.upper(
-      allPartitions
-        .sortBy(p => getMaxDist(partition.envelop, p.envelop))
+    analyzedPartition.upper(
+      allPartitions.sortBy(p => getMaxDist(partition.envelop, p.envelop))
         .takeWhile(p => {
           if (knnVal > 0) {
             knnVal -= p.size
@@ -174,62 +160,33 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
           } else {
             false
           }
-        })
-        .map(p => getMaxDist(partition.envelop, p.envelop)).max
+        }).map(p => getMaxDist(partition.envelop, p.envelop)).max
     )
-    val ret = new PartitionProps()
-    ret.setEnvelop(new Envelope(partition.envelop))
-    ret.setSize(partition.size)
-    ret.upper(partition.upper)
-    ret.lower(partition.lower)
 
-    ret
+    analyzedPartition
   }
 
   private def getMinDist(env1: Envelope, env2: Envelope): Double = {
-    if (env1.intersects(env2)) {
-      return 0
-    }
-    val r = (env1.getMinX, env1.getMinY)
-    val rd = (env1.getMaxX, env1.getMaxY)
-
-    val s = (env2.getMinX, env2.getMinY)
-    val sd = (env2.getMaxX, env2.getMaxY)
-
-    var d1 = 0.0
-    if (sd._1 < r._1) {
-      d1 = r._1 - sd._1
-    } else if (rd._1 < s._1) {
-      d1 = s._1 - rd._1
-    } else {
-      d1 = 0
-    }
-
-    var d2 = 0.0
-    if (sd._2 < r._2) {
-      d2 = r._2 - sd._2
-    } else if (rd._2 < s._2) {
-      d2 = s._2 - rd._2
-    } else {
-      d2 = 0
-    }
-
-    d1 * d1 + d2 * d2
+    Array(
+      (env1.getMinX, env1.getMaxX, env2.getMinX, env2.getMaxX),
+      (env1.getMinY, env1.getMaxY, env2.getMinY, env2.getMaxY)
+    ).map({ case (r, rd, s, sd) =>
+      if (sd < r) {
+        r - sd
+      } else if (rd < s) {
+        s - rd
+      } else {
+        0D
+      }
+    }).map(d => d * d).sum
   }
 
   private def getMaxDist(env1: Envelope, env2: Envelope): Double = {
-    if (env1.contains(env2) || env2.contains(env1)) {
-      return 0
-    }
-    val r = (env1.getMinX, env1.getMinY)
-    val rd = (env1.getMaxX, env1.getMaxY)
-
-    val s = (env2.getMinX, env2.getMinY)
-    val sd = (env2.getMaxX, env2.getMaxY)
-
-    val d1 = Math.max(Math.abs(sd._1 - r._1), Math.abs(rd._1 - s._1))
-    val d2 = Math.max(Math.abs(sd._2 - r._2), Math.abs(rd._2 - s._2))
-
-    d1 * d1 + d2 * d2
+    Array(
+      (env1.getMinX, env1.getMaxX, env2.getMinX, env2.getMaxX),
+      (env1.getMinY, env1.getMaxY, env2.getMinY, env2.getMaxY)
+    ).map({ case (r, rd, s, sd) =>
+      math.max(math.abs(sd - r), math.abs(rd - s))
+    }).map(d => d * d).sum
   }
 }

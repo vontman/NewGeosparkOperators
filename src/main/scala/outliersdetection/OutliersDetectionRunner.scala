@@ -4,7 +4,7 @@ package outliersdetection
 import java.io.File
 
 import org.datasyslab.geospark.enums.{GridType, IndexType}
-import utils.{GenerateGaussianData, SparkRunner}
+import utils.{GenerateUniformData, SparkRunner}
 
 import scala.collection.JavaConversions._
 import scala.language.postfixOps
@@ -16,11 +16,11 @@ object OutliersDetectionRunner {
     val sc = SparkRunner.start()
 
     deleteOldValidation()
-    for (iter <- 0 to 70) {
-      val data = GenerateGaussianData().generate(sc, 10000, 800000)
+    for (iter <- 0 to 1000) {
+      val data = GenerateUniformData().generate(sc, 50, 1000)
 
-      val n = 100
-      val k = 100
+      val n = 1
+      val k = 5
 
       data.analyze
       var nextRdd = data
@@ -34,12 +34,12 @@ object OutliersDetectionRunner {
 
       Array(
         //        new ExpanderByTotalPointsRatio(0.3, 5000)
-        new ExpanderByPointsRatioPerGrid(0.4, 5000, x => x.getBounds.getArea)
-        //        new ExpanderWithAreaBounds(0.2, 5000, 1.0 / 300, 1.0 / 5000, indexNode => indexNode.getBounds.getArea)
+        new ExpanderByPointsRatioPerGrid(0.5, 1000, x => x.getBounds.getArea)
+        //        new ExpanderWithAreaBounds(0.4, 5000, 1.0 / 300, 1.0 / 5000, indexNode => indexNode.getBounds.getArea)
       ).foreach(expander => {
         //        for (_ <- 0 until 1) {
         prevCount = nextRdd.countWithoutDuplicates
-        nextRdd = OutliersDetectionGeneric(GridType.QUADTREE, IndexType.QUADTREE, expander).findOutliers(originalBounds, nextRdd, n, k, s"visualization/$iter/${expander.getClass.getSimpleName}_$pruningIteration")._2
+        nextRdd = OutliersDetectionGeneric(GridType.RTREE, IndexType.RTREE, expander).findOutliers(originalBounds, nextRdd, n, k, s"visualization/$iter/${expander.getClass.getSimpleName}_$pruningIteration")._2
         nextCount = nextRdd.countWithoutDuplicates
         println("Pruning = " + ((1.0 * data.countWithoutDuplicates - nextCount) / data.countWithoutDuplicates * 100.0) + "\n")
 
@@ -50,14 +50,21 @@ object OutliersDetectionRunner {
         val possibleAns = nextRdd.rawSpatialRDD.collect().toList
 
         if (possibleAns.size < data.approximateTotalCount) {
-          val ans = OutliersDetectionNaiive.findOutliersNaive(data, k, n)
+          val ans = OutliersDetectionNaiive.findOutliersNaive(data, n, k)
           println(s"Finished Naiive Execution and found ${ans.size} outliers")
-          Plotter.visualizeNaiive(sc, data.boundaryEnvelope, ans, "natiive")
-          if (possibleAns.containsAll(ans)) {
-            println(s"$iter VALID")
+          try {
+            Plotter.visualizeNaiive(sc, data.boundaryEnvelope, ans, s"visualization/$iter/naiive")
+          } catch {
+            case e: Exception => println(s"$iter Could not plot naiive solution")
           }
-          else {
+          if (ans.exists(possibleAns.contains)) {
+            println(s"$iter VALID\n")
+          } else {
             println(s"$iter INVALID")
+            println(s"Naiive   Ans -> [${ans.mkString(", ")}]")
+            println(s"Operator Ans -> [${possibleAns.mkString(", ")}]")
+            println(s"Difference   -> [${ans.filterNot(possibleAns.contains).mkString(", ")}]\n")
+            System.exit(-1)
           }
         }
       })
