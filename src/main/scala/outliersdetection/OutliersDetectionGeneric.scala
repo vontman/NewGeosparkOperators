@@ -168,26 +168,46 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
   }
 
   private def getMinDist(env1: Envelope, env2: Envelope): Double = {
-    Array(
-      (env1.getMinX, env1.getMaxX, env2.getMinX, env2.getMaxX),
-      (env1.getMinY, env1.getMaxY, env2.getMinY, env2.getMaxY)
-    ).map({ case (r, rd, s, sd) =>
-      if (sd < r) {
-        r - sd
-      } else if (rd < s) {
-        s - rd
-      } else {
-        0D
-      }
-    }).map(d => d * d).sum
+
+    var ret = 0.0
+    var tmp = 0.0
+
+    val (r, rd, s, sd) = (env1.getMinX, env1.getMaxX, env2.getMinX, env2.getMaxX)
+    tmp = if (sd < r) {
+      r - sd
+    } else if (rd < s) {
+      s - rd
+    } else {
+      0D
+    }
+    ret += tmp*tmp
+
+    val (r2, rd2, s2, sd2) = (env1.getMinY, env1.getMaxY, env2.getMinY, env2.getMaxY)
+    tmp = if (sd2 < r2) {
+      r2 - sd2
+    } else if (rd2 < s2) {
+      s2 - rd2
+    } else {
+      0D
+    }
+    ret += tmp*tmp
+
+    ret
   }
 
   private def getMaxDist(env1: Envelope, env2: Envelope): Double = {
-    Array(
-      (env1.getMinX, env1.getMaxX, env2.getMinX, env2.getMaxX),
-      (env1.getMinY, env1.getMaxY, env2.getMinY, env2.getMaxY)
-    ).map({ case (r, rd, s, sd) =>
-      math.max(math.abs(sd - r), math.abs(rd - s))
-    }).map(d => d * d).sum
+
+    var ret = 0.0
+    var tmp = 0.0
+
+    val (r, rd, s, sd) = (env1.getMinX, env1.getMaxX, env2.getMinX, env2.getMaxX)
+    tmp = math.max(math.abs(sd - r), math.abs(rd - s))
+    ret += tmp*tmp
+
+    val (r2, rd2, s2, sd2) = (env1.getMinY, env1.getMaxY, env2.getMinY, env2.getMaxY)
+    tmp = math.max(math.abs(sd2 - r2), math.abs(rd2 - s2))
+    ret += tmp*tmp
+
+    ret
   }
 }
