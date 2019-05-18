@@ -17,10 +17,10 @@ object OutliersDetectionRunner {
 
     deleteOldValidation()
     for (iter <- 0 to 1000) {
-      val data = GenerateUniformData().generate(sc, 50, 1000)
+      val data = GenerateUniformData().generate(sc, 10000, 100000)
 
-      val n = 1
-      val k = 5
+      val n = 50
+      val k = 50
 
       data.analyze
       var nextRdd = data
@@ -57,7 +57,7 @@ object OutliersDetectionRunner {
           } catch {
             case e: Exception => println(s"$iter Could not plot naiive solution")
           }
-          if (ans.exists(possibleAns.contains)) {
+          if (possibleAns.containsAll(ans)) {
             println(s"$iter VALID\n")
           } else {
             println(s"$iter INVALID")

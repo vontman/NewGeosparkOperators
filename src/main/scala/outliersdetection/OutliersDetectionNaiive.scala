@@ -18,7 +18,7 @@ object OutliersDetectionNaiive {
     println("Executing naiive outliers detection")
 
     var outliersCount = n
-    val ans1 = data.collect().map(point => {
+    data.collect().map(point => {
       (point, KNNQuery.SpatialKnnQuery(rdd, point, k, true).map(p2 => point.distance(p2)).max)
     }).groupBy(_._2).toList.sortBy(-_._1).takeWhile({ case (_, points) =>
       if (outliersCount > 0) {
@@ -28,41 +28,6 @@ object OutliersDetectionNaiive {
         false
       }
     }).flatMap(_._2)
-
-
-    val resRDD = new KNNJoinWithCirclesWithReduceByKey().solve(new GeometryFactory(), rdd, rdd, k, null, false, "")
-
-
-    val ans2 = resRDD.rdd
-      .map({ case (p, knn) => (p, knn.map(p.distance).max) })
-      .takeOrdered(n)(Ordering.by[(Point, Double), Double](_._2).reverse)
-      .toList
-
-
-    outliersCount = n
-    val ans3 = resRDD.rdd.map({ case (p, knn) => (p, knn.map(p.distance).max) })
-      .collect()
-      .groupBy(_._2)
-      .toList.sortBy(-_._1).takeWhile({ case (_, points) =>
-      if (outliersCount > 0) {
-        outliersCount -= points.length
-        true
-      } else {
-        false
-      }
-    }).flatMap(_._2)
-
-    try {
-      assert(ans3.containsAll(ans1) && ans3.containsAll(ans2))
-    } catch {
-      case e: AssertionError =>
-        e.printStackTrace()
-        println(s"[KNN native              = ${ans1.mkString(", ")}]")
-        println(s"[KNNJoin                 = ${ans2.mkString(", ")}]")
-        println(s"[KNNJoinMultipleOutliers = ${ans3.mkString(", ")}]")
-        return ans1.map(_._1)
-    }
-
-    ans3.map(_._1)
+    .map(_._1)
   }
 }
