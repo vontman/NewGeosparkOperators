@@ -110,16 +110,17 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
   private def computeCandidatePartitions(allPartitions: RDD[PartitionProps], n: Int): RDD[PartitionProps] = {
     var pointsToTake = n
 
-    val minDkDist = allPartitions
-      .sortBy(_.lower, ascending = false)
-      .collect.takeWhile(p => {
-      if (pointsToTake > 0) {
-        pointsToTake -= p.size
-        true
-      } else {
-        false
-      }
-    }).map(_.lower).min
+    val minDkDist = allPartitions.collect()
+      .sortBy(_.lower)
+      .reverse
+      .takeWhile(p => {
+        if (pointsToTake > 0) {
+          pointsToTake -= p.size
+          true
+        } else {
+          false
+        }
+      }).map(_.lower).min
 
     allPartitions.filter((currentPartition: PartitionProps) => {
       currentPartition.upper >= minDkDist
