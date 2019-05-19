@@ -50,7 +50,7 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
       "querySize: %d, queryRange: %d\nK: %d\n",
       inputSize, inputRange, querySize, queryRange, k)
 
-    val iterationsCount = 3
+    val iterationsCount = 300
     val timeout = 200000
     val operationId = Random.nextLong()
 
@@ -70,6 +70,8 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
     val solverTimeOuts = Array.fill(solvers.size)(0)
 
     for (iteration <- 1 to iterationsCount) {
+      println(s"iteration $iteration/$iterationsCount")
+
       val fileBaseName = directoryName + "/" + iteration + "_"
       resultsStr.append("Iteration " + iteration + "\n")
 
@@ -102,7 +104,7 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
           println(solverName + " finished in " + timeElapsed + "ms\n")
 
           resultsStr.append(solverName + " finished in " + timeElapsed + "ms\n")
-          resultList ::= res
+          resultList = resultList ::: res :: Nil
           res
         }.getOrElse({
           solverTimeOuts(solverInd) += 1
@@ -111,9 +113,7 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
           null
         })
 
-//        solverResults(solverInd) = res.collect().toList
-
-        if (visualize /*&& res != null*/) {
+        if (visualize) {
           println("Drawing the " + solverName + " Image")
 
           val geometryFactory = new GeometryFactory()
@@ -156,6 +156,26 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
 
       }
 
+
+      for {
+        (p1, knn1) <- resultList.get(0).collect()
+        (p2, knn2) <- resultList.get(1).collect()
+        if p1 == p2
+      } {
+
+        if (knn1.size() != k || knn2.size() != k) {
+          println("SIZE INCORRECT")
+          println(s"${solvers.get(0)._2}: ${knn1.size}")
+          println(s"${solvers.get(1)._2}: ${knn2.size}")
+        }
+
+        if (!knn1.containsAll(knn2) || !knn2.containsAll(knn1)) {
+          println("MISMATCH")
+          println(s"${solvers.get(0)._2}: ${knn1.diff(knn2).map(p1.distance).mkString(", ")}")
+          println(s"${solvers.get(1)._2}: ${knn2.diff(knn1).map(p1.distance).mkString(", ")}")
+        }
+
+      }
 //      println(ResultChecker.compare(resultList(0), resultList(1), k));
       //          println(res.count(), res.countByKey().size)
       //      for {
@@ -218,32 +238,35 @@ object KNNJoinBenchmark {
     val runId = System.currentTimeMillis()
 
     for (((querySize, queryRange), (inputSize, inputRange), k) <- List(
-      ((10000, 100000),
-        (10000, 100000),
-        500),
-      ((50000, 100000),
-        (50000, 100000),
-        100),
-      ((100000, 100000),
-        (100000, 100000),
-        20),
-      ((200000, 100000),
-        (200000, 100000),
-        10)
+      ((20, 100000),
+        (10, 100000),
+        2)
+//      ((10000, 100000),
+//        (10000, 100000),
+//        500),
+//      ((50000, 100000),
+//        (50000, 100000),
+//        100),
+//      ((100000, 100000),
+//        (100000, 100000),
+//        20),
+//      ((200000, 100000),
+//        (200000, 100000),
+//        10)
     )) {
       val benchmark = new KNNJoinBenchmark(
         sparkContext,
         geometryFactory,
-        visualize = false,
+        visualize = true,
         outputPath = System.getProperty("user.dir") +
           "/target/knnjoin/" + runId + "/"
       )
       benchmark.compareKNNJoinSolvers(
         List(
-          (new KNNJoinInPartitionOnly(), "KNN_InPartitionOnly"),
+//          (new KNNJoinInPartitionOnly(), "KNN_InPartitionOnly"),
           (new KNNJoinWithCirclesWithReduceByKey(), "KNN_WithCirclesWithReduceByKey"),
-          (new KNNJoinWithCircles(), "KNN_WithCirclesWithGroupByKey")
-//       (KNNJoinNaive, "KNN_Naive")
+//          (new KNNJoinWithCircles(), "KNN_WithCirclesWithGroupByKey"),
+       (KNNJoinNaive, "KNN_Naive")
         ), inputSize, inputRange, querySize, queryRange, k)
 
     }

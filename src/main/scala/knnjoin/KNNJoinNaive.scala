@@ -14,13 +14,13 @@ object KNNJoinNaive extends KNNJoinSolver {
                      resultStr: StringBuilder, visualize: Boolean,
                      outputPath: String)
   : JavaPairRDD[Point, java.util.List[Point]] = {
-    dataRDD.spatialPartitioning(GridType.QUADTREE)
     dataRDD.buildIndex(IndexType.RTREE, false)
-    dataRDD.buildIndex(IndexType.RTREE, true)
 
     val res = queryRDD.rawSpatialRDD.rdd.collect().map(point => {
       (point, KNNQuery.SpatialKnnQuery(dataRDD, point, k, true))
     })
+    assert(res.size == queryRDD.countWithoutDuplicates())
+    assert(res.forall(_._2.size() == k))
 
     JavaPairRDD.fromRDD(dataRDD.rawSpatialRDD.sparkContext.parallelize(res)).cache()
   }

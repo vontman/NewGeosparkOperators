@@ -10,6 +10,8 @@ import com.vividsolutions.jts.index.strtree.GeometryItemDistance;
 import com.vividsolutions.jts.index.strtree.STRtree;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
@@ -54,9 +56,7 @@ public class KNNJoinWithCircles implements KNNJoinSolver {
 
         points.forEachRemaining(point -> {
             if ( pq.size() >= k ) {
-                double d1 = center.distance(point);
-                double d2 = center.distance(pq.peek());
-                if ( d2 > d1 ) {
+                if ( pq.comparator().compare(pq.peek(), point) < 0 ) {
                     pq.poll();
                     pq.add(point);
                 }
@@ -73,19 +73,22 @@ public class KNNJoinWithCircles implements KNNJoinSolver {
 
         return resRDD
             .groupByKey()
-            .flatMapValues(
-                (Iterable<Tuple2<Point, List<Point>>> tuples) -> {
-                    List<List<Point>> result = new ArrayList<>();
-                    tuples.forEach(t -> {
-                        final Point center = t._1;
-                        final List<Point> points = t._2;
-
-                        result.add(reducePointsForCenter(k, center, points.iterator()));
-                    });
-
-                    return result;
+            .mapValues((Iterable<Tuple2<Point, List<Point>>> tuples) -> {
+                Point center = null;
+                Iterator<Point> allPointsIterator = Collections.emptyIterator();
+                for ( Tuple2<Point, List<Point>> t : tuples ) {
+                    center = t._1;
+                    final List<Point> points = t._2;
+                    allPointsIterator = Iterators.concat(allPointsIterator, points.iterator());
                 }
-            );
+
+                List<Point> knn = new ArrayList<>();
+                if (center != null)
+                    knn = reducePointsForCenter(k, center, allPointsIterator);
+
+                return knn;
+
+            });
     }
 
     static private JavaPairRDD<Point, List<Point>> reduceResultByReduceByKey(int k,

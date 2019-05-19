@@ -54,9 +54,7 @@ public class KNNJoinWithCirclesWithReduceByKey implements KNNJoinSolver {
 
         points.forEachRemaining(point -> {
             if ( pq.size() >= k ) {
-                double d1 = center.distance(point);
-                double d2 = center.distance(pq.peek());
-                if ( d2 > d1 ) {
+                if ( pq.comparator().compare(pq.peek(), point) < 0 ) {
                     pq.poll();
                     pq.add(point);
                 }
@@ -66,26 +64,6 @@ public class KNNJoinWithCirclesWithReduceByKey implements KNNJoinSolver {
         });
 
         return new ArrayList<>(pq);
-    }
-
-    static private JavaPairRDD<Point, List<Point>> reduceResultByGroupByKey(int k,
-        JavaPairRDD<Point, Tuple2<Point, List<Point>>> resRDD) {
-
-        return resRDD
-            .groupByKey()
-            .flatMapValues(
-                (Iterable<Tuple2<Point, List<Point>>> tuples) -> {
-                    List<List<Point>> result = new ArrayList<>();
-                    tuples.forEach(t -> {
-                        final Point center = t._1;
-                        final List<Point> points = t._2;
-
-                        result.add(reducePointsForCenter(k, center, points.iterator()));
-                    });
-
-                    return result;
-                }
-            );
     }
 
     static private JavaPairRDD<Point, List<Point>> reduceResultByReduceByKey(int k,
