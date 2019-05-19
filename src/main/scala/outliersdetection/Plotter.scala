@@ -2,7 +2,6 @@ package outliersdetection
 
 import java.awt.Color
 import java.awt.image.BufferedImage
-import java.nio.file.Paths
 
 import com.vividsolutions.jts.geom.{Coordinate, Envelope, GeometryFactory, Point}
 import org.apache.spark.api.java.JavaSparkContext
@@ -16,13 +15,10 @@ object Plotter {
   val geometryFactory: GeometryFactory = new GeometryFactory()
 
   def visualizeNaiive(sc: JavaSparkContext, boundryEnvelope: Envelope, ans: List[Point], plotName: String): Unit = {
-    val pointRDD = new PointRDD(sc.parallelize(ans))
+    val pointRDD = new PointRDD(sc.parallelize(ans, 1))
     pointRDD.analyze()
     pointRDD.spatialPartitioning(GridType.RTREE)
     pointRDD.buildIndex(IndexType.RTREE, true)
-
-    val scatterOutput = Paths.get("visualization/outliers", plotName).toString
-
 
     val resX = 200
     val resY = 200
@@ -38,29 +34,16 @@ object Plotter {
     afterImageG.drawImage(dataOperator.rasterImage, 0, 0, null)
 
     val imageGenerator = new ImageGenerator()
-    imageGenerator.SaveRasterImageAsLocalFile(afterImage, scatterOutput, ImageType.PNG)
+    imageGenerator.SaveRasterImageAsLocalFile(afterImage, plotName, ImageType.PNG)
   }
 
-  def visualize(sc: JavaSparkContext,
+  def visualize(scatterOutput: String,
+                sc: JavaSparkContext,
                 candidatePoints: PointRDD,
-                plotName: String,
                 totalPlotBounds: Envelope,
                 filteredPoints: PointRDD = null,
-                partitions: List[PartitionProps] = null): Unit = {
-    val scatterOutput = Paths.get("visualization/outliers", plotName).toString
-    visualize2(scatterOutput, sc, candidatePoints, plotName, totalPlotBounds, filteredPoints, partitions)
-
-  }
-
-
-  def visualize2(scatterOutput: String,
-                 sc: JavaSparkContext,
-                 candidatePoints: PointRDD,
-                 plotName: String,
-                 totalPlotBounds: Envelope,
-                 filteredPoints: PointRDD = null,
-                 partitions: List[PartitionProps] = null
-                ): Unit = {
+                partitions: List[PartitionProps] = null
+               ): Unit = {
 
 
     val resX = 200
@@ -130,47 +113,6 @@ object Plotter {
     if (partitions != null) {
       afterImageG.drawImage(boundsOperator.rasterImage, 0, 0, null)
     }
-
-    val imageGenerator = new ImageGenerator()
-    imageGenerator.SaveRasterImageAsLocalFile(afterImage, scatterOutput, ImageType.PNG)
-  }
-
-  def plotPartitions(sc: JavaSparkContext, partitions: List[PartitionProps], plotName: String): Unit = {
-
-    val scatterOutput = Paths.get("visualization/outliers", "partitions_boarders", plotName).toString
-
-
-    val resX = 300
-    val resY = 300
-
-    val grids: PolygonRDD = new PolygonRDD(sc.parallelize(
-      partitions.map(partition => {
-        val env = partition.envelop
-
-        geometryFactory.createPolygon(Array(
-          new Coordinate(env.getMinX, env.getMinY),
-          new Coordinate(env.getMinX, env.getMaxY),
-          new Coordinate(env.getMaxX, env.getMaxY),
-          new Coordinate(env.getMaxX, env.getMinY),
-          new Coordinate(env.getMinX, env.getMinY)
-        ))
-      })))
-
-    grids.analyze()
-
-    val boundsOperator = new ScatterPlot(resX, resY, grids.boundaryEnvelope, false, false)
-    boundsOperator.CustomizeColor(255, 255, 255, 255, Color.GREEN, true)
-
-    boundsOperator.Visualize(sc, grids)
-
-
-    val afterImage = new BufferedImage(resX, resY, BufferedImage.TYPE_INT_ARGB)
-    val afterImageG = afterImage.getGraphics
-    afterImageG.setColor(Color.BLACK)
-    afterImageG.fillRect(0, 0, resX, resY)
-
-    afterImageG.drawImage(boundsOperator.rasterImage, 0, 0, null)
-
 
     val imageGenerator = new ImageGenerator()
     imageGenerator.SaveRasterImageAsLocalFile(afterImage, scatterOutput, ImageType.PNG)

@@ -21,32 +21,35 @@ object ExpanderByTotalPointsRatio {
 }
 
 class ExpanderByTotalPointsRatio(
-    partitionsToPointsRatio: Double,
-    maxThreshold: Int
-) extends LevelExpander {
+                                  partitionsToPointsRatio: Double,
+                                  maxThreshold: Int
+                                ) extends LevelExpander {
 
   private def levelsExpander(rdd: PointRDD): RDD[IndexNode] = {
-    val numberOfPartitions = math.min(
-      rdd.rawSpatialRDD.count() * partitionsToPointsRatio,
-      maxThreshold)
+    val numberOfPartitions = math.min(rdd.rawSpatialRDD.count() * partitionsToPointsRatio, maxThreshold)
 
-    var nextLevelPartitions = rdd.indexedRDD.rdd
-      .map({
-        case t: Quadtree => IndexNode(t.getRoot)
-        case t: STRtree  => IndexNode(t.getRoot)
-      })
-      .filter(_.getPointsCount > 0)
+    var nextLevelPartitions = rdd.indexedRDD.rdd.map({
+      case t: Quadtree => IndexNode(t.getRoot)
+      case t: STRtree => IndexNode(t.getRoot)
+    }).filter(_.getPointsCount > 0)
 
     var curCount = nextLevelPartitions.count()
     var selectedLevel = nextLevelPartitions
+    var prevCount = -1L
 
-    while (curCount < numberOfPartitions) {
-      nextLevelPartitions = nextLevelPartitions
-        .mapPartitions(_.flatMap(index => index.getChildren))
-        .cache()
+    while (curCount < numberOfPartitions && curCount > prevCount) {
+      prevCount = curCount
+      nextLevelPartitions = nextLevelPartitions.mapPartitions(_.flatMap(index => {
+        if (index.hasChildren) {
+          index.getChildren
+        } else {
+          List(index)
+        }
+      })).cache()
       curCount = nextLevelPartitions.count()
-      if (curCount < numberOfPartitions)
+      if (curCount < numberOfPartitions) {
         selectedLevel = nextLevelPartitions
+      }
     }
 
     selectedLevel.cache()

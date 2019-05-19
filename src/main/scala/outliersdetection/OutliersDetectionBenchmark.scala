@@ -82,16 +82,16 @@ object OutliersDetectionBenchmark {
 
     } {
       val dataRDD = inputGenerationStrategy.generate(sc, dataCount, 100000)
-//      val dataRDD = {
-//        val location = "benchmark/1557588114229/2640218211505695195_RTREE_ExpanderWithAreaBounds_.1_10k_.003_.0003_RTREE_100_ 100_GenerateExponentialData_data"
-//        val splitter = FileDataSplitter.GEOJSON
-//        val offset = 0
-//        new PointRDD(sc,
-//          location,
-//          offset,
-//          splitter,
-//          true)
-//      }
+      //      val dataRDD = {
+      //        val location = "benchmark/1557588114229/2640218211505695195_RTREE_ExpanderWithAreaBounds_.1_10k_.003_.0003_RTREE_100_ 100_GenerateExponentialData_data"
+      //        val splitter = FileDataSplitter.GEOJSON
+      //        val offset = 0
+      //        new PointRDD(sc,
+      //          location,
+      //          offset,
+      //          splitter,
+      //          true)
+      //      }
       val id = Random.nextLong()
 
       for {
@@ -106,6 +106,7 @@ object OutliersDetectionBenchmark {
           s"Starting a new test iteration: $iteration/$maxIterations, dataCount: $dataCount, solver: $solverName, inputGen: ${inputGenerationStrategy.getClass.getSimpleName}")
 
         var currDataRDD = dataRDD
+        val originalBounds = dataRDD.boundaryEnvelope
 
         var logger = defLog
 
@@ -116,6 +117,7 @@ object OutliersDetectionBenchmark {
             val ret = runWithTimeout(240000) {
               OutliersDetectionGeneric(gridType, indexType, expansionFunction)
                 .findOutliers(
+                  originalBounds,
                   currDataRDD,
                   n,
                   k,
@@ -174,6 +176,7 @@ object OutliersDetectionBenchmark {
     resultsCsv.close()
     sc.stop
   }
+
   //
   //  private def deleteOldValidation() = {
   //    System.out.println("Delete old visualizations")
