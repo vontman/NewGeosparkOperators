@@ -264,8 +264,8 @@ object KNNJoinBenchmark {
       benchmark.compareKNNJoinSolvers(
         List(
 //          (new KNNJoinInPartitionOnly(), "KNN_InPartitionOnly"),
-          (new KNNJoinWithCirclesWithReduceByKey(), "KNN_WithCirclesWithReduceByKey"),
-//          (new KNNJoinWithCircles(), "KNN_WithCirclesWithGroupByKey"),
+//          (new KNNJoinWithCirclesWithReduceByKey(), "KNN_WithCirclesWithReduceByKey"),
+          (new KNNJoinWithCircles(), "KNN_WithCirclesWithGroupByKey"),
        (KNNJoinNaive, "KNN_Naive")
         ), inputSize, inputRange, querySize, queryRange, k)
 
