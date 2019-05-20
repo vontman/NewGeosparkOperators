@@ -1,14 +1,12 @@
 package knnjoin
 
-
 import java.io.{File, PrintWriter}
 
 import com.vividsolutions.jts.geom._
+import knnjoin.KNNJoinWithCircles.ReduceKNNLogic
 import org.apache.spark.SparkContext
 import org.apache.spark.api.java.JavaPairRDD
-import org.apache.spark.storage.StorageLevel
-import org.datasyslab.geospark.enums.FileDataSplitter
-import org.datasyslab.geospark.spatialRDD.{LineStringRDD, PointRDD, PolygonRDD, SpatialRDD}
+import org.datasyslab.geospark.spatialRDD.{LineStringRDD, PolygonRDD}
 import utils.{GenerateUniformData, SparkRunner, Visualization}
 
 import scala.collection.JavaConversions._
@@ -17,7 +15,6 @@ import scala.concurrent._
 import scala.concurrent.duration._
 import scala.util.Random
 
-
 /**
   * The Class ScalaExample.
   */
@@ -25,7 +22,6 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
                        geometryFactory: GeometryFactory,
                        visualize: Boolean,
                        outputPath: String) {
-
 
   def runWithTimeout[T](timeoutMs: Long)(f: => T): Option[T] = {
     try {
@@ -41,16 +37,21 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
   }
 
   def compareKNNJoinSolvers(solvers: List[(KNNJoinSolver, String)],
-                            inputSize: Int, inputRange: Int,
-                            querySize: Int, queryRange: Int,
+                            inputSize: Int,
+                            inputRange: Int,
+                            querySize: Int,
+                            queryRange: Int,
                             k: Int): PrintWriter = {
 
-
     printf("Starting a new test with:\ndataSize: %d, dataRange: %d\n" +
-      "querySize: %d, queryRange: %d\nK: %d\n",
-      inputSize, inputRange, querySize, queryRange, k)
+             "querySize: %d, queryRange: %d\nK: %d\n",
+           inputSize,
+           inputRange,
+           querySize,
+           queryRange,
+           k)
 
-    val iterationsCount = 300
+    val iterationsCount = 5
     val timeout = 200000
     val operationId = Random.nextLong()
 
@@ -76,14 +77,15 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
       resultsStr.append("Iteration " + iteration + "\n")
 
       val dataSpatialRDD = {
-        val rdd = GenerateUniformData().generate(sparkContext, querySize,
-          queryRange)
+        val rdd =
+          GenerateUniformData().generate(sparkContext, querySize, queryRange)
         rdd.analyze()
         rdd
       }
 
       val querySpatialRDD = {
-        val rdd = GenerateUniformData().generate(sparkContext, inputSize, inputRange)
+        val rdd =
+          GenerateUniformData().generate(sparkContext, inputSize, inputRange)
         rdd.analyze()
         rdd
       }
@@ -94,8 +96,13 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
 
         val t0 = System.nanoTime()
         val res = runWithTimeout(timeout) {
-          val res = solver.solve(geometryFactory, dataSpatialRDD, queryRDD = querySpatialRDD, k,
-            resultStr = resultsStr, visualize = visualize, outputPath = fileBaseName + solverName + "_")
+          val res = solver.solve(geometryFactory,
+                                 dataSpatialRDD,
+                                 queryRDD = querySpatialRDD,
+                                 k,
+                                 resultStr = resultsStr,
+                                 visualize = visualize,
+                                 outputPath = fileBaseName + solverName + "_")
           // Trying to defeat the lazy computations
           res.count()
 
@@ -121,28 +128,32 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
             res.rdd.flatMap({
               case (center, points) =>
                 points.toList.map(
-                  p => geometryFactory.createLineString(Array(center.getCoordinate, p.getCoordinate))
+                  p =>
+                    geometryFactory.createLineString(
+                      Array(center.getCoordinate, p.getCoordinate))
                 )
             })
           )
           linesRDD.analyze()
 
-          val polygonBounds = dataSpatialRDD
-            .getPartitioner.getGrids.map(
-            env => geometryFactory.createPolygon(Array(
-              new Coordinate(env.getMinX, env.getMinY),
-              new Coordinate(env.getMinX, env.getMaxY),
-              new Coordinate(env.getMaxX, env.getMaxY),
-              new Coordinate(env.getMaxX, env.getMinY),
-              new Coordinate(env.getMinX, env.getMinY)
-            )))
+          val polygonBounds = dataSpatialRDD.getPartitioner.getGrids.map(
+            env =>
+              geometryFactory.createPolygon(Array(
+                new Coordinate(env.getMinX, env.getMinY),
+                new Coordinate(env.getMinX, env.getMaxY),
+                new Coordinate(env.getMaxX, env.getMaxY),
+                new Coordinate(env.getMaxX, env.getMinY),
+                new Coordinate(env.getMinX, env.getMinY)
+              )))
 
           val polygonRDD = sparkContext.parallelize(polygonBounds)
           val boundsRDD = new PolygonRDD(polygonRDD)
           boundsRDD.analyze()
 
-          Visualization.buildScatterPlot(List(boundsRDD, linesRDD, dataSpatialRDD, querySpatialRDD), fileBaseName +
-            solverName + "_result")
+          Visualization.buildScatterPlot(
+            List(boundsRDD, linesRDD, dataSpatialRDD, querySpatialRDD),
+            fileBaseName +
+              solverName + "_result")
           //          val missingPointsRDD = new PointRDD(
           //            sparkContext.parallelize(
           //              querySpatialRDD.rawSpatialRDD.collect().filterNot(res.keys().collect().toSet)
@@ -154,9 +165,12 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
           //            solverName + "_result")
         }
 
+        sparkContext.getPersistentRDDs.foreach {
+          case (_, rdd) => rdd.unpersist()
+        }
+
       }
-
-
+      /*
       for {
         (p1, knn1) <- resultList.get(0).collect()
         (p2, knn2) <- resultList.get(1).collect()
@@ -176,32 +190,16 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
         }
 
       }
-//      println(ResultChecker.compare(resultList(0), resultList(1), k));
-      //          println(res.count(), res.countByKey().size)
-      //      for {
-      //        x <- solverResults
-      //        y <- solverResults
-      //      } {
-      //        if (x.size > y.size) {
-      //          println("COMPARE")
-      //          println(x.filterNot(y.toSet).mkString(", "))
-      //        } else if (x.size < y.size) {
-      //          println("COMPARE")
-      //          println(y.filterNot(x.toSet).mkString(", "))
-      //        }
-      //      }
-      //      resultsStr.append("Results:\n")
-      //      resultsStr.append(solvers.map(_._2).zip(solverResults).mkString("\n")
-      //        + "\n\n")
-
-      sparkContext.getPersistentRDDs.foreach { case (_, rdd) => rdd.unpersist() }
+     */
 
     }
 
-    resultsStr.append("\nFor inputSize: " + inputSize + ", inputRange: " +
-      inputRange + "\n")
-    resultsStr.append("\nFor querySize: " + querySize + ", queryRange: " +
-      queryRange + "\n")
+    resultsStr.append(
+      "\nFor inputSize: " + inputSize + ", inputRange: " +
+        inputRange + "\n")
+    resultsStr.append(
+      "\nFor querySize: " + querySize + ", queryRange: " +
+        queryRange + "\n")
     resultsStr.append("\nFor k: " + k + "\n\n")
 
     resultsStr.append("Using Timeout: " + timeout + "ms\n")
@@ -209,17 +207,18 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
 
     for (solverInd <- solvers.indices) {
       if (solverTimeOuts(solverInd) < iterationsCount) {
-        resultsStr.append("Avg " + solvers(solverInd)._2 + " Time per " +
-          "Iteration: " +
-          solverAvgTimePerIteration(solverInd) /
-            (iterationsCount - solverTimeOuts(solverInd)) + "ms\n"
-        )
+        resultsStr.append(
+          "Avg " + solvers(solverInd)._2 + " Time per " +
+            "Iteration: " +
+            solverAvgTimePerIteration(solverInd) /
+              (iterationsCount - solverTimeOuts(solverInd)) + "ms\n")
       }
     }
 
     for (solverInd <- solvers.indices) {
-      resultsStr.append(solvers(solverInd)._2 + " Timeouts: " +
-        solverTimeOuts(solverInd) + "\n")
+      resultsStr.append(
+        solvers(solverInd)._2 + " Timeouts: " +
+          solverTimeOuts(solverInd) + "\n")
     }
     println(resultsStr.toString())
 
@@ -238,41 +237,37 @@ object KNNJoinBenchmark {
     val runId = System.currentTimeMillis()
 
     for (((querySize, queryRange), (inputSize, inputRange), k) <- List(
-      ((20, 100000),
-        (10, 100000),
-        2)
-//      ((10000, 100000),
-//        (10000, 100000),
-//        500),
-//      ((50000, 100000),
-//        (50000, 100000),
-//        100),
-//      ((100000, 100000),
-//        (100000, 100000),
-//        20),
-//      ((200000, 100000),
-//        (200000, 100000),
-//        10)
-    )) {
+//           ((50000, 100000), (50000, 100000), 100),
+//           ((10000, 100000), (10000, 100000), 50),
+//           ((100000, 100000), (100000, 100000), 10),
+//           ((1000000, 100000), (1000000, 100000), 5)
+      ((1000000, 100000), (1000000, 100000), 10)
+         )) {
       val benchmark = new KNNJoinBenchmark(
         sparkContext,
         geometryFactory,
-        visualize = true,
+        visualize = false,
         outputPath = System.getProperty("user.dir") +
           "/target/knnjoin/" + runId + "/"
       )
       benchmark.compareKNNJoinSolvers(
         List(
-//          (new KNNJoinInPartitionOnly(), "KNN_InPartitionOnly"),
-//          (new KNNJoinWithCirclesWithReduceByKey(), "KNN_WithCirclesWithReduceByKey"),
-          (new KNNJoinWithCircles(), "KNN_WithCirclesWithGroupByKey"),
-       (KNNJoinNaive, "KNN_Naive")
-        ), inputSize, inputRange, querySize, queryRange, k)
+          (new KNNJoinInPartitionOnly(), "KNN_InPartitionOnly"),
+          (new KNNJoinWithCircles(ReduceKNNLogic.REDUCE_BY_KEY),
+           "KNN_WithCirclesWithReduceByKey"),
+          (new KNNJoinWithCircles(ReduceKNNLogic.GROUP_BY_KEY),
+           "KNN_WithCirclesWithGroupByKey")
+          //       (KNNJoinNaive, "KNN_Naive")
+        ),
+        inputSize,
+        inputRange,
+        querySize,
+        queryRange,
+        k
+      )
 
     }
     sparkContext.stop()
 
   }
 }
-
-
