@@ -39,6 +39,8 @@ case class RtreeNode(node: Boundable) extends IndexNode {
 
   override def getChildren: List[IndexNode] = node match {
     case abstractNode: AbstractNode => {
+      abstractNode.getChildBoundables.map(_.asInstanceOf[Boundable]).filter(_.pointsCount() > 0).map(IndexNode.apply).toList
+      /*
       if (abstractNode.getLevel == 0) {
         List()
       } else {
@@ -58,6 +60,7 @@ case class RtreeNode(node: Boundable) extends IndexNode {
         }
 
       }
+       */
     }
     case _: ItemBoundable =>
       List()

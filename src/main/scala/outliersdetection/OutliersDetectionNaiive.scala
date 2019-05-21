@@ -1,7 +1,6 @@
 package outliersdetection
 
 import com.vividsolutions.jts.geom.{GeometryFactory, Point}
-import knnjoin.KNNJoinWithCirclesWithReduceByKey
 import org.datasyslab.geospark.enums.IndexType
 import org.datasyslab.geospark.spatialOperator.KNNQuery
 import org.datasyslab.geospark.spatialRDD.PointRDD

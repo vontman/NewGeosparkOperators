@@ -1,10 +1,9 @@
-
 package outliersdetection
 
 import java.io.File
 
 import org.datasyslab.geospark.enums.{GridType, IndexType}
-import utils.{GenerateUniformData, SparkRunner}
+import utils.{GenerateGaussianData, GenerateNonUniformData, GenerateUniformData, GenerateZipfData, SparkRunner}
 
 import scala.collection.JavaConversions._
 import scala.language.postfixOps
@@ -18,10 +17,10 @@ object OutliersDetectionRunner {
     deleteOldValidation()
 
     for (iter <- 0 to 1000) {
-      val data = GenerateUniformData().generate(sc, 10000, 100000)
+      val data = GenerateNonUniformData().generate(sc, 100000, 100000, numPartitions = 4)
 
-      val n = 50
-      val k = 50
+      val n = 300
+      val k = 300
 
       data.analyze
       var nextRdd = data
@@ -30,46 +29,86 @@ object OutliersDetectionRunner {
       var pruningIteration = 1
       val originalBounds = data.boundaryEnvelope
 
-      data.spatialPartitioning(GridType.RTREE)
-      data.buildIndex(IndexType.RTREE, true)
+      data.spatialPartitioning(GridType.QUADTREE)
+      data.buildIndex(IndexType.QUADTREE, true)
 
       Array(
         //        new ExpanderByTotalPointsRatio(0.3, 5000),
         //new ExpanderByPointsRatioPerGrid(0.7, 7000, x => x.getBounds.getArea),
-        new ExpanderWithAreaBounds(0.7, 7000, 1.0 / 300, 1.0 / 5000, indexNode => indexNode.getPointsCount / indexNode.getBounds.getArea)
+        new ExpanderWithAreaBounds(
+          0.1,
+          10000,
+          1.0 / 300,
+          1.0 / 5000,
+          indexNode => indexNode.getBounds.getArea)
+//      new ExpanderWithAreaBounds(.5, 5000, 1.0 / 300, 1.0 / 5000,  indexNode => indexNode.getBounds.getArea)
       ).foreach(expander => {
-        //        for (_ <- 0 until 1) {
+
+        var t0 = 0L
+
+        t0 = System.currentTimeMillis()
         prevCount = nextRdd.countWithoutDuplicates
-        nextRdd = OutliersDetectionGeneric(GridType.RTREE, IndexType.RTREE, expander).findOutliers(originalBounds, nextRdd, n, k, s"visualization/$iter/${expander.getClass.getSimpleName}_$pruningIteration")._2
+        nextRdd = OutliersDetectionGeneric(GridType.RTREE,
+                                           IndexType.RTREE,
+                                           expander)
+          .findOutliers(
+            originalBounds,
+            data,
+            n,
+            k,
+            s"visualization/$iter/${expander.getClass.getSimpleName}_$pruningIteration")
+          ._2
         nextCount = nextRdd.countWithoutDuplicates
-        println("Pruning = " + ((1.0 * data.countWithoutDuplicates - nextCount) / data.countWithoutDuplicates * 100.0) + "\n")
+        println(s"TimeElapsed: ${System.currentTimeMillis() - t0} millis")
+        println(
+          "Pruning = " + ((1.0 * data.countWithoutDuplicates - nextCount) / data.countWithoutDuplicates * 100.0) + "\n")
 
         pruningIteration += 1
-        //        }
-
 
         val possibleAns = nextRdd.rawSpatialRDD.collect().toList
 
-        if (possibleAns.size < data.approximateTotalCount) {
-          val ans = OutliersDetectionNaiive.findOutliersNaive(data, n, k)
+        if (false && possibleAns.size < data.approximateTotalCount) {
+
+          t0 = System.currentTimeMillis()
+          val result =
+            OutliersDetectionNaiveWithKNNJoin.findOutliersNaive3(nextRdd,
+                                                                 k,
+                                                                 n,
+                                                                 data)
+          println(s"Result TimeElapsed: ${System.currentTimeMillis() - t0} millis")
+
+          t0 = System.currentTimeMillis()
+          val ans = OutliersDetectionNaiveWithKNNJoin.findOutliersNaive3(data,
+                                                                         k,
+                                                                         n,
+                                                                         data)
+          println(s"Naive TimeElapsed: ${System.currentTimeMillis() - t0} millis")
           println(s"Finished Naiive Execution and found ${ans.size} outliers")
-          try {
-            Plotter.visualizeNaiive(sc, data.boundaryEnvelope, ans, s"visualization/$iter/naiive")
-          } catch {
-            case e: Exception => println(s"$iter Could not plot naiive solution")
-          }
-          if (possibleAns.containsAll(ans)) {
+          if (ans.map(_._2).containsAll(result.map(_._2)) && result
+                .map(_._2)
+                .containsAll(ans.map(_._2))) {
             println(s"$iter VALID\n")
           } else {
+            try {
+              Plotter.visualizeNaiive(sc,
+                                      data.boundaryEnvelope,
+                                      ans.map(_._1),
+                                      s"visualization/$iter/naiive")
+            } catch {
+              case e: Exception =>
+                println(s"$iter Could not plot naiive solution")
+            }
             println(s"$iter INVALID")
-            println(s"Naiive   Ans -> [${ans.mkString(", ")}]")
-            println(s"Operator Ans -> [${possibleAns.mkString(", ")}]")
-            println(s"Difference   -> [${ans.filterNot(possibleAns.contains).mkString(", ")}]\n")
+            println(s"Naiive   Ans -> [${ans.map(_._2).mkString(", ")}]")
+            println(s"Operator Ans -> [${result.map(_._2).mkString(", ")}]")
+            println(
+              s"Difference   -> [${ans.map(_._2).diff(result.map(_._2)).mkString(", ")}]\n")
             System.exit(-1)
           }
         }
       })
     }
+    sc.getPersistentRDDs.foreach(_._2.unpersist())
     sc.stop
   }
 
@@ -77,7 +116,8 @@ object OutliersDetectionRunner {
     val visualizationsFile = new File("visualization")
     if (visualizationsFile.exists()) {
       System.out.println("Delete old visualizations")
-      val process = Runtime.getRuntime.exec(s"rm -rf ${visualizationsFile.getAbsolutePath}")
+      val process =
+        Runtime.getRuntime.exec(s"rm -rf ${visualizationsFile.getAbsolutePath}")
       process.waitFor
     }
   }

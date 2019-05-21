@@ -52,7 +52,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     assert(partitionPropsRDD.map(_.size).sum == inputRDD.approximateTotalCount)
 
     val partitionsList = partitionPropsRDD.collect().toList
-    val partitionPropsAnalyzed = partitionPropsRDD.map(computeLowerUpper(partitionsList, _, k))
+    val partitionPropsAnalyzed = partitionPropsRDD.map(computeLowerUpper(partitionsList, _, k)).cache()
 
     val candidates: Set[PartitionProps] = computeCandidatePartitions(partitionPropsAnalyzed, n).collect.toSet
 
@@ -100,36 +100,41 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
 
     //    Plotter.visualize(outputPath + "_B", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds)
 
-    Plotter.visualize(outputPath + "_C", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds, filteredPoints)
-
-    Plotter.visualize(outputPath + "_D", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds, filteredPoints, partitionsList)
+//    Plotter.visualize(outputPath + "_C", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds, filteredPoints)
+//
+//    Plotter.visualize(outputPath + "_D", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds, filteredPoints, partitionsList)
 
     (logger, candidatePoints)
   }
 
   private def computeCandidatePartitions(allPartitions: RDD[PartitionProps], n: Int): RDD[PartitionProps] = {
-    var pointsToTake = n
+//    var pointsToTake = n
 
-    val minDkDist = allPartitions.collect()
-      .sortBy(_.lower)
-      .reverse
-      .takeWhile(p => {
-        if (pointsToTake > 0) {
-          pointsToTake -= p.size
-          true
-        } else {
-          false
-        }
-      }).map(_.lower).min
+//    val minDkDist = allPartitions
+//      .sortBy(-_.lower)
+//      .collect()
+//      .takeWhile(p => {
+//        if (pointsToTake > 0) {
+//          pointsToTake -= p.size
+//          true
+//        } else {
+//          false
+//        }
+//      }).map(_.lower).min
+    val minDkDist = allPartitions
+    .flatMap(p => {
+      List.fill(p.size)(-p.lower)
+    }).takeOrdered(n).max * -1
+
 
     allPartitions.filter((currentPartition: PartitionProps) => {
       currentPartition.upper >= minDkDist
     })
-    //      .flatMap((currentPartition: PartitionProps) => {
-    //      allPartitions
-    //        .filter(p => !p.equals(currentPartition))
-    //        .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
-    //    }).toSet
+//          .flatMap((currentPartition: PartitionProps) => {
+//          allPartitions
+//            .filter(p => !p.equals(currentPartition))
+//            .filter(p => getMinDist(p.envelop, currentPartition.envelop) <= currentPartition.upper)
+//        })
   }
 
   private def computeLowerUpper(allPartitions: List[PartitionProps], partition: PartitionProps, k: Int): PartitionProps = {

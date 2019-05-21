@@ -86,7 +86,7 @@ class ExpanderWithAreaBounds(
           }
         }
 
-        //        println("SecondStage " + (expander.size + leafNodes.size))
+//        println("SecondStage " + expander.size + ", " + leafNodes.size + ", " + leafNodes.exists(_.getChildren.size > 0))
         expander.toList ::: leafNodes
 
       }).cache()
