@@ -24,10 +24,6 @@ object OutliersDetectionRunner {
       val k = 50
 
       data.analyze
-      var nextRdd = data
-      var prevCount = 0L
-      var nextCount = 0L
-      var pruningIteration = 1
       val originalBounds = data.boundaryEnvelope
 
       data.spatialPartitioning(GridType.RTREE)
@@ -38,35 +34,19 @@ object OutliersDetectionRunner {
         //new ExpanderByPointsRatioPerGrid(0.7, 7000, x => x.getBounds.getArea),
         new ExpanderWithAreaBounds(0.7, 7000, 1.0 / 300, 1.0 / 5000, indexNode => indexNode.getPointsCount / indexNode.getBounds.getArea)
       ).foreach(expander => {
-        //        for (_ <- 0 until 1) {
-        prevCount = nextRdd.countWithoutDuplicates
-        nextRdd = OutliersDetectionGeneric(GridType.RTREE, IndexType.RTREE, expander).findOutliers(originalBounds, nextRdd, n, k, s"visualization/$iter/${expander.getClass.getSimpleName}_$pruningIteration")._2
-        nextCount = nextRdd.countWithoutDuplicates
-        println("Pruning = " + ((1.0 * data.countWithoutDuplicates - nextCount) / data.countWithoutDuplicates * 100.0) + "\n")
+        val ans = OutliersDetectionGeneric(GridType.RTREE, IndexType.RTREE, expander).findOutliers(originalBounds, data, n, k, s"visualization/$iter/${expander.getClass.getSimpleName}")._2
 
-        pruningIteration += 1
-        //        }
+        val verifiedAns = OutliersDetectionNaiive.findOutliersNaive(data, n, k)
 
 
-        val possibleAns = nextRdd.rawSpatialRDD.collect().toList
-
-        if (possibleAns.size < data.approximateTotalCount) {
-          val ans = OutliersDetectionNaiive.findOutliersNaive(data, n, k)
-          println(s"Finished Naiive Execution and found ${ans.size} outliers")
-          try {
-            Plotter.visualizeNaiive(sc, data.boundaryEnvelope, ans, s"visualization/$iter/naiive")
-          } catch {
-            case e: Exception => println(s"$iter Could not plot naiive solution")
-          }
-          if (possibleAns.containsAll(ans)) {
-            println(s"$iter VALID\n")
-          } else {
-            println(s"$iter INVALID")
-            println(s"Naiive   Ans -> [${ans.mkString(", ")}]")
-            println(s"Operator Ans -> [${possibleAns.mkString(", ")}]")
-            println(s"Difference   -> [${ans.filterNot(possibleAns.contains).mkString(", ")}]\n")
-            System.exit(-1)
-          }
+        if (verifiedAns.containsAll(ans) && ans.containsAll(verifiedAns)) {
+          println(s"$iter VALID\n")
+        } else {
+          println(s"$iter INVALID")
+          println(s"Naiive   Ans -> [${verifiedAns.mkString(", ")}]")
+          println(s"Operator Ans -> [${ans.mkString(", ")}]")
+          println(s"Difference   -> [${(verifiedAns.filterNot(ans.contains) ++ ans.filterNot(verifiedAns.contains)).mkString(", ")}]\n")
+          System.exit(-1)
         }
       })
     }

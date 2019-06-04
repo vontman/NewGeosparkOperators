@@ -4,6 +4,7 @@ import java.io.File
 import java.util.concurrent.TimeoutException
 
 import com.bizo.mighty.csv.CSVDictWriter
+import com.vividsolutions.jts.geom.Point
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import utils._
 
@@ -100,71 +101,65 @@ object OutliersDetectionBenchmark {
 
         (expansionFunction, expanderName) <- ExpanderWithAreaBounds.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
 
-        solverName = s"${gridType}_${expanderName}"
+        solverName = s"${gridType}_$expanderName"
       } {
         println(
           s"Starting a new test iteration: $iteration/$maxIterations, dataCount: $dataCount, solver: $solverName, inputGen: ${inputGenerationStrategy.getClass.getSimpleName}")
 
-        var currDataRDD = dataRDD
         val originalBounds = dataRDD.boundaryEnvelope
 
         var logger = defLog
 
-        for (iter <- 1 to 2) {
+        val (logs, filteredRDD) = {
 
-          val (logs, filteredRDD) = {
-
-            val ret = runWithTimeout(240000) {
-              OutliersDetectionGeneric(gridType, indexType, expansionFunction)
-                .findOutliers(
-                  originalBounds,
-                  currDataRDD,
-                  n,
-                  k,
-                  s"$outputPath/${id}_${solverName}_${inputGenerationStrategy.getClass.getSimpleName}_iteration_${iter}_")
-            }
-
-            ret match {
-              case Some(res) => res
-              case None =>
-                val path =
-                  s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_${n}_${inputGenerationStrategy.getClass.getSimpleName}"
-                if (!new File(s"${path}_data").exists) {
-                  dataRDD.saveAsGeoJSON(
-                    s"${path}_data"
-                  )
-                  Visualization.buildScatterPlot(
-                    List(dataRDD),
-                    s"${path}_plot"
-                  )
-                }
-
-                (defLog, currDataRDD)
-            }
-
+          val ret = runWithTimeout(240000) {
+            OutliersDetectionGeneric(gridType, indexType, expansionFunction)
+              .findOutliers(
+                originalBounds,
+                dataRDD,
+                n,
+                k,
+                s"$outputPath/${id}_${solverName}_${inputGenerationStrategy.getClass.getSimpleName}")
           }
-          val newPointsCount = filteredRDD.rawSpatialRDD.count()
 
-          logger ++=
-            Map(
-              "name" -> solverName,
-              "dataCount" -> dataCount.toString,
-              "n" -> n.toString,
-              "k" -> k.toString,
-              "input_generation_strategy" -> inputGenerationStrategy.getClass.getSimpleName,
-              "gridType" -> gridType.toString,
-              "indexType" -> indexType.toString,
-              s"iteration_${iter}_used_partitions" -> logs
-                .getOrElse("used_partitions", "0"),
-              s"iteration_${iter}_partitions_after_pruning" -> logs
-                .getOrElse("partitions_after_pruning", "0"),
-              s"iteration_${iter}_points_after_pruning" -> newPointsCount.toString,
-              s"iteration_${iter}_pruning_percentage" -> (100.0 * (dataCount - newPointsCount) / dataCount).toString,
-              s"iteration_${iter}_time" -> logs.getOrElse("time", "120000")
-            )
+          ret match {
+            case Some(res) => res
+            case None =>
+              val path =
+                s"$outputPath/timeouts/${id}_${solverName}_${gridType}_${k}_${n}_${inputGenerationStrategy.getClass.getSimpleName}"
+              if (!new File(s"${path}_data").exists) {
+                dataRDD.saveAsGeoJSON(
+                  s"${path}_data"
+                )
+                Visualization.buildScatterPlot(
+                  List(dataRDD),
+                  s"${path}_plot"
+                )
+              }
 
-          currDataRDD = filteredRDD
+              (defLog, dataRDD)
+          }
+
         }
+        val newPointsCount = filteredRDD.asInstanceOf[Iterable[Point]].size
+
+        logger ++=
+          Map(
+            "name" -> solverName,
+            "dataCount" -> dataCount.toString,
+            "n" -> n.toString,
+            "k" -> k.toString,
+            "input_generation_strategy" -> inputGenerationStrategy.getClass.getSimpleName,
+            "gridType" -> gridType.toString,
+            "indexType" -> indexType.toString,
+            s"used_partitions" -> logs
+              .getOrElse("used_partitions", "0"),
+            s"partitions_after_pruning" -> logs
+              .getOrElse("partitions_after_pruning", "0"),
+            s"points_after_pruning" -> newPointsCount.toString,
+            s"pruning_percentage" -> (100.0 * (dataCount - newPointsCount) / dataCount).toString,
+            s"time" -> logs.getOrElse("time", "120000")
+          )
 
         resultsCsv.write(logger)
         resultsCsv.flush()
