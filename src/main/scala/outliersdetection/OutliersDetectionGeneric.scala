@@ -15,7 +15,7 @@ object OutliersDetectionGeneric {
 
 class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsExpander: LevelExpander) extends Serializable {
 
-  def findOutliers(originalBounds: Envelope, inputRDD: PointRDD, n: Int, k: Int, outputPath: String): (Map[String, String], Iterable[Point]) = {
+  def findOutliers(originalBounds: Envelope, inputRDD: PointRDD, n: Int, k: Int, outputPath: String): (Map[String, String], List[Point]) = {
 
     var logger = Map.empty[String, String]
 
@@ -59,7 +59,8 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     val filteredPartitions = partitionsList.filterNot(remainingPartitions.contains)
 
     println("# Partitions after  pruning = " + candidates.flatMap(_.neighbours).size)
-    logger += "partitions_after_pruning" -> candidates.size.toString
+    logger += "neighbour_partitions" -> candidates.flatMap(_.neighbours).size.toString
+    logger += "candidate_partitions" -> candidates.size.toString
 
     val candidatePointsRDD: RDD[Point] = partitions.filter((node: IndexNode) => {
       val currentPartition = new PartitionProps
@@ -67,29 +68,28 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
       candidates.contains(currentPartition)
     }).mapPartitions(_.flatMap(_.getAllPoints))
 
-    val filteredPointsRDD: RDD[Point] = partitions.filter((node: IndexNode) => {
-      val currentPartition = new PartitionProps
-      currentPartition.envelop(node.getBounds)
-      filteredPartitions.contains(currentPartition)
-    }).mapPartitions(_.flatMap(_.getAllPoints))
+//    val filteredPointsRDD: RDD[Point] = partitions.filter((node: IndexNode) => {
+//      val currentPartition = new PartitionProps
+//      currentPartition.envelop(node.getBounds)
+//      filteredPartitions.contains(currentPartition)
+//    }).mapPartitions(_.flatMap(_.getAllPoints))
 
     logger += "pruning_time" -> (System.currentTimeMillis() - t1).toString
 
-    val candidatePoints = new PointRDD(candidatePointsRDD)
-    val filteredPoints = new PointRDD(filteredPointsRDD)
+//    val candidatePoints = new PointRDD(candidatePointsRDD)
+//    val filteredPoints = new PointRDD(filteredPointsRDD)
 
-    Array(candidatePoints, filteredPoints).foreach(_.analyze)
+//    Array(candidatePoints, filteredPoints).foreach(_.analyze)
 
-    val candidatePointsCount = candidatePoints.approximateTotalCount
-    val filteredPointsCount = filteredPoints.approximateTotalCount
+    val candidatePointsCount = candidatePointsRDD.count()
+//    val filteredPointsCount = filteredPoints.approximateTotalCount
     println("After # of Points = " + candidatePointsCount)
 
-    logger += "candidates_percentage" -> (candidatePointsCount.toDouble / dataCount) * 100.0
-    logger += "neighbours_percentage" -> (filteredPointsCount.toDouble / dataCount) * 100.0
+    logger += "candidates_percentage" -> ((candidatePointsCount.toDouble / dataCount) * 100.0).toString
+    logger += "neighbours_percentage" -> ((candidatePointsCount.toDouble / dataCount) * 100.0).toString
 
 
-    println(s"candidates count = $candidatePointsCount, filtered count = $filteredPointsCount, total count = ${inputRDD.approximateTotalCount}")
-    assert(candidatePointsCount + filteredPointsCount == inputRDD.approximateTotalCount)
+//    println(s"candidates count = $candidatePointsCount, filtered count = $filteredPointsCount, total count = ${inputRDD.approximateTotalCount}")
 
     //    if (candidatePoints.approximateTotalCount == inputRDD.approximateTotalCount) {
     //      return (logger, candidatePoints)
@@ -105,15 +105,25 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
 
     val t2 = System.currentTimeMillis()
 
-    val ans = reduceOutliers(
-      partitions.filter(indexNode => remainingPartitions.contains(envsToProps(indexNode.getBounds))).map(indexNode => (indexNode, envsToProps(indexNode.getBounds).id)),
-      partitions.filter(indexNode => candidates.contains(envsToProps(indexNode.getBounds))).flatMap(indexNode => indexNode.getAllPoints.map((_, envsToProps(indexNode.getBounds).neighbours.toSet))).collect.toSet,
+    val ans = reduceOutliersWithKNNJoin(
+      partitions.filter(indexNode => remainingPartitions.contains(envsToProps(indexNode.getBounds))).flatMap(_.getAllPoints).cache(),
+      partitions.filter(indexNode => candidates.contains(envsToProps(indexNode.getBounds))).flatMap(_.getAllPoints).cache(),
       k,
       n
     )
 
-    logger += "reducing_outliers_time" -> (System.currentTimeMillis() - t2).toString
+    logger += "reducing_outliers" -> (System.currentTimeMillis() - t2).toString
+    logger += "reducing_outliers_time_knnjoin" -> (System.currentTimeMillis() - t2).toString
     logger += "total_time" -> (System.currentTimeMillis() - t0).toString
+
+//    val t3 = System.currentTimeMillis()
+//    reduceOutliers(
+//      partitions.filter(indexNode => remainingPartitions.contains(envsToProps(indexNode.getBounds))).map(indexNode => (indexNode, envsToProps(indexNode.getBounds).id)),
+//      partitions.filter(indexNode => candidates.contains(envsToProps(indexNode.getBounds))).flatMap(indexNode => indexNode.getAllPoints.map((_, envsToProps(indexNode.getBounds).neighbours.toSet))).collect.toSet,
+//      k,
+//      n
+//    )
+//    logger += "reducing_outliers_time_custom" -> (System.currentTimeMillis() - t3).toString
 
     (logger, ans)
   }
@@ -218,13 +228,53 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     ret
   }
 
+  private def reduceOutliersWithKNNJoin(neighbours: RDD[Point], candidates: RDD[Point], k: Int, n: Int): List[Point] = {
+    val candidatesRDD = new PointRDD(candidates)
+    val neighboursRDD = new PointRDD(neighbours)
+    candidatesRDD.analyze()
+    neighboursRDD.analyze()
+    OutliersDetectionNaiveWithKNNJoin.findOutliersNaive2(candidatesRDD, k, n, neighboursRDD)
+  }
+
   private def reduceOutliers(neighbours: RDD[(IndexNode, Int)], candidates: Iterable[(Point, Set[Int])], k: Int, n: Int): List[Point] = {
     neighbours.flatMap[(Point, List[(Double, Point)])]({
       case (indexNode, id) =>
-        candidates.filter(_._2.contains(id))
-          .map(c => (c._1, indexNode.getAllPoints.sortBy(c._1.distance).take(k).map(p => (p.distance(c._1), p))))
+        candidates
+          .filter(_._2.contains(id))
+          .map(c =>
+            (
+              c._1,
+              indexNode.getAllPoints.sortBy(c._1.distance).take(k).map(p => (p.distance(c._1), p))
+            )
+          )
     }).reduceByKey((l1, l2) => {
-      (l1 ::: l2).sortBy(_._1).take(k)
+      var res = List.empty[(Double, Point)]
+      var i1 = 0
+      var i2 = 0
+      for (_ <- 0 until k) {
+        if (i1 < l1.size && i2 < l2.size) {
+          val x1 = l1(i1)
+          val x2 = l2(i2)
+
+          if (x1._1 < x2._1) {
+            res = res :+ x1
+            i1 += 1
+          } else {
+            res = res :+ x2
+            i2 += 1
+          }
+        } else if (i1 < l1.size) {
+          val x1 = l1(i1)
+          res = res :+ x1
+          i1 += 1
+        } else if (i2 < l2.size) {
+          val x2 = l2(i2)
+          res = res :+ x2
+          i2 += 1
+        }
+      }
+      res
+      //(l1 ::: l2).sortBy(_._1).take(k)
     }).map({
       case (c, ns) => (c, ns.last._1)
     })
