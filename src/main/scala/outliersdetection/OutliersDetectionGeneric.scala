@@ -32,6 +32,9 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     println("Before # of Points = " + dataCount)
     println("# Partitions before pruning = " + partitions.count())
     logger += "used_partitions" -> partitions.count().toString
+    logger += "expanding_partitions_time" -> (System.currentTimeMillis() - t0).toString
+
+    val t1 = System.currentTimeMillis()
 
     val partitionPropsRDD = partitions.zipWithIndex.map({ case (indexNode, id) =>
       val partitionProps = new PartitionProps()
@@ -44,7 +47,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
 
     var partitionsList = partitionPropsRDD.collect.toList
 
-    val partitionPropsAnalyzed = partitionPropsRDD.map(computeLowerUpper(partitionsList, _, k))
+    val partitionPropsAnalyzed = partitionPropsRDD.map(computeLowerUpper(partitionsList, _, k)).cache()
     val tmp = computeCandidatePartitions(partitionPropsAnalyzed.collect, n)
     partitionsList = tmp._1.toList
     val candidates: Set[PartitionProps] = tmp._2.toSet
@@ -70,7 +73,7 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
       filteredPartitions.contains(currentPartition)
     }).mapPartitions(_.flatMap(_.getAllPoints))
 
-    logger += "time" -> (System.currentTimeMillis() - t0).toString
+    logger += "pruning_time" -> (System.currentTimeMillis() - t1).toString
 
     val candidatePoints = new PointRDD(candidatePointsRDD)
     val filteredPoints = new PointRDD(filteredPointsRDD)
@@ -80,6 +83,9 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     val candidatePointsCount = candidatePoints.approximateTotalCount
     val filteredPointsCount = filteredPoints.approximateTotalCount
     println("After # of Points = " + candidatePointsCount)
+
+    logger += "candidates_percentage" -> (candidatePointsCount.toDouble / dataCount) * 100.0
+    logger += "neighbours_percentage" -> (filteredPointsCount.toDouble / dataCount) * 100.0
 
 
     println(s"candidates count = $candidatePointsCount, filtered count = $filteredPointsCount, total count = ${inputRDD.approximateTotalCount}")
@@ -97,6 +103,8 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     //
     //      Plotter.visualize(outputPath + "_D", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds, filteredPoints, partitionsList)
 
+    val t2 = System.currentTimeMillis()
+
     val ans = reduceOutliers(
       partitions.filter(indexNode => remainingPartitions.contains(envsToProps(indexNode.getBounds))).map(indexNode => (indexNode, envsToProps(indexNode.getBounds).id)),
       partitions.filter(indexNode => candidates.contains(envsToProps(indexNode.getBounds))).flatMap(indexNode => indexNode.getAllPoints.map((_, envsToProps(indexNode.getBounds).neighbours.toSet))).collect.toSet,
@@ -104,6 +112,8 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
       n
     )
 
+    logger += "reducing_outliers_time" -> (System.currentTimeMillis() - t2).toString
+    logger += "total_time" -> (System.currentTimeMillis() - t0).toString
 
     (logger, ans)
   }
@@ -218,8 +228,9 @@ class OutliersDetectionGeneric(gridType: GridType, indexType: IndexType, levelsE
     }).map({
       case (c, ns) => (c, ns.last._1)
     })
-      .sortBy(_._2, ascending = false)
-      .take(n).map(_._1).toList
+      .takeOrdered(n)(Ordering.by((x: (Point, Double)) => x._2).reverse)
+      .map(_._1)
+      .toList
   }
 
 }
