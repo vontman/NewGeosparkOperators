@@ -37,23 +37,23 @@ object OutliersDetectionBenchmark {
     new File(outputPath).mkdirs()
     val headers = Seq(
       "name",
-      "dataCount",
       "n",
       "k",
       "gridType",
       "indexType",
       "input_generation_strategy",
-      "iteration_1_used_partitions",
-      "iteration_1_partitions_after_pruning",
-      "iteration_1_points_after_pruning",
-      "iteration_1_pruning_percentage",
-      "iteration_1_time",
-      "iteration_2_used_partitions",
-      "iteration_2_partitions_after_pruning",
-      "iteration_2_points_after_pruning",
-      "iteration_2_pruning_percentage",
-      "iteration_2_time"
+      "total_time",
+      "expanding_partitions_time",
+      "pruning_time",
+      "reducing_outliers_time",
+      "neighbour_partitions",
+      "candidate_partitions",
+      "candidates_percentage",
+      "neighbours_percentage",
+      "reducing_outliers_time_knnjoin",
+      "reducing_outliers_time_custom"
     )
+
 
     val defLog = headers.map(_ -> "0").toMap
 
@@ -62,21 +62,21 @@ object OutliersDetectionBenchmark {
 
     for {
       inputGenerationStrategy <- List(
-        GenerateUniformData(),
+//        GenerateUniformData(),
         GenerateGaussianData(),
-        GenerateExponentialData(),
+//        GenerateExponentialData(),
         GenerateNonUniformData(),
-        GenerateZipfData(.75),
-        GenerateZipfData(.9)
+        GenerateZipfData(.75)
+//        GenerateZipfData(.9)
       )
 
       (dataCount, n, k, maxIterations) <- List(
-        (10000, 100, 100, 20),
-        (50000, 100, 100, 20),
-        (100000, 300, 200, 10),
-        (250000, 300, 300, 10),
-        (500000, 300, 300, 5),
-        (1000000, 500, 700, 3)
+        (10000, 100, 50, 5)
+//        (50000, 100, 100, 5)
+//        (100000, 300, 200, 5),
+//        (250000, 300, 300, 5),
+//        (500000, 300, 300, 5),
+//        (1000000, 500, 700, 5)
       )
 
       iteration <- 1 to maxIterations
@@ -99,7 +99,8 @@ object OutliersDetectionBenchmark {
         gridType <- List(GridType.QUADTREE, GridType.RTREE)
         indexType = IndexType.QUADTREE
 
-        (expansionFunction, expanderName) <- ExpanderWithAreaBounds.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations
+        (expansionFunction, expanderName) <- ExpanderWithAreaBounds.getPermutations ::: ExpanderByPointsRatioPerGrid.getPermutations ::: ExpanderByTotalPointsRatio.getPermutations
+//        (expansionFunction, expanderName) <- ExpanderWithAreaBounds.getPermutations
 
         solverName = s"${gridType}_$expanderName"
       } {
@@ -112,7 +113,7 @@ object OutliersDetectionBenchmark {
 
         val (logs, filteredRDD) = {
 
-          val ret = runWithTimeout(240000) {
+          val ret = runWithTimeout(320000) {
             OutliersDetectionGeneric(gridType, indexType, expansionFunction)
               .findOutliers(
                 originalBounds,
@@ -141,25 +142,15 @@ object OutliersDetectionBenchmark {
           }
 
         }
-        val newPointsCount = filteredRDD.asInstanceOf[Iterable[Point]].size
-
         logger ++=
           Map(
             "name" -> solverName,
-            "dataCount" -> dataCount.toString,
             "n" -> n.toString,
             "k" -> k.toString,
             "input_generation_strategy" -> inputGenerationStrategy.getClass.getSimpleName,
             "gridType" -> gridType.toString,
-            "indexType" -> indexType.toString,
-            s"used_partitions" -> logs
-              .getOrElse("used_partitions", "0"),
-            s"partitions_after_pruning" -> logs
-              .getOrElse("partitions_after_pruning", "0"),
-            s"points_after_pruning" -> newPointsCount.toString,
-            s"pruning_percentage" -> (100.0 * (dataCount - newPointsCount) / dataCount).toString,
-            s"time" -> logs.getOrElse("time", "120000")
-          )
+            "indexType" -> indexType.toString
+          ) ++ logs
 
         resultsCsv.write(logger)
         resultsCsv.flush()

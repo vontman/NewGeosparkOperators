@@ -13,7 +13,8 @@ object ExpanderByPointsRatioPerGrid {
 
     for {
       maxPartitionsRatio <- List(.1)
-      threshold <- List(30000, 15000, 10000, 5000)
+//      threshold <- List(30000, 15000, 10000, 5000)
+      threshold <- List(1000000000)
       (comparator, comparatorName) <- List[(IndexNode => Double, String)](
         (indexNode => indexNode.getBounds.getArea, "area"),
         (indexNode => indexNode.getPointsCount / indexNode.getBounds.getArea, "density"),

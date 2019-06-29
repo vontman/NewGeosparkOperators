@@ -14,7 +14,8 @@ object ExpanderWithAreaBounds {
 
     for {
       maxPartitionsRatio <- List(.1)
-      threshold <- List(30000, 15000, 10000, 5000)
+//      threshold <- List(30000, 15000, 10000, 5000)
+      threshold <- List(10000000)
       minAreaRatio <- List(1.0 / 300)
       maxAreaRatio <- List(1.0 / 5000)
       (comparator, comparatorName) <- List[(IndexNode => Double, String)](
