@@ -6,8 +6,7 @@ import com.vividsolutions.jts.geom._
 import knnjoin.KNNJoinWithCircles.ReduceKNNLogic
 import org.apache.spark.SparkContext
 import org.apache.spark.api.java.JavaPairRDD
-import org.datasyslab.geospark.enums.FileDataSplitter
-import org.datasyslab.geospark.spatialRDD.{LineStringRDD, PointRDD, PolygonRDD}
+import org.datasyslab.geospark.spatialRDD.{LineStringRDD, PolygonRDD}
 import utils.{GenerateUniformData, SparkRunner, Visualization}
 
 import scala.collection.JavaConversions._
@@ -77,39 +76,39 @@ class KNNJoinBenchmark(sparkContext: SparkContext,
       val fileBaseName = directoryName + "/" + iteration + "_"
       resultsStr.append("Iteration " + iteration + "\n")
 
-//      val dataSpatialRDD = {
-//        val rdd =
-//          GenerateUniformData().generate(sparkContext, querySize, queryRange)
-//        rdd.analyze()
-//        rdd
-//      }
-//
-//      val querySpatialRDD = {
-//        val rdd =
-//          GenerateUniformData().generate(sparkContext, inputSize, inputRange)
-//        rdd.analyze()
-//        rdd
-//      }
-
       val dataSpatialRDD = {
-        val pointRDDInputLocation = "/home/vontman/Downloads/points_10M.csv"
-        val pointRDDOffset = 0 // The point long/lat starts from Column 0
-        val pointRDDSplitter = FileDataSplitter.CSV
-        val carryOtherAttributes = true // Carry Column 2 (hotel, gas, bar...)
-        var objectRDD = new PointRDD(sparkContext, pointRDDInputLocation, pointRDDOffset, pointRDDSplitter, carryOtherAttributes)
-        objectRDD.analyze()
-        objectRDD
+        val rdd =
+          GenerateUniformData().generate(sparkContext, querySize, queryRange)
+        rdd.analyze()
+        rdd
       }
 
       val querySpatialRDD = {
-        val pointRDDInputLocation = "/home/vontman/Downloads/points_10M.csv"
-        val pointRDDOffset = 0 // The point long/lat starts from Column 0
-        val pointRDDSplitter = FileDataSplitter.CSV
-        val carryOtherAttributes = true // Carry Column 2 (hotel, gas, bar...)
-        var objectRDD = new PointRDD(sparkContext, pointRDDInputLocation, pointRDDOffset, pointRDDSplitter, carryOtherAttributes)
-        objectRDD.analyze()
-        objectRDD
+        val rdd =
+          GenerateUniformData().generate(sparkContext, inputSize, inputRange)
+        rdd.analyze()
+        rdd
       }
+
+      //      val dataSpatialRDD = {
+      //        val pointRDDInputLocation = "/home/vontman/Downloads/points_10M.csv"
+      //        val pointRDDOffset = 0 // The point long/lat starts from Column 0
+      //        val pointRDDSplitter = FileDataSplitter.CSV
+      //        val carryOtherAttributes = true // Carry Column 2 (hotel, gas, bar...)
+      //        var objectRDD = new PointRDD(sparkContext, pointRDDInputLocation, pointRDDOffset, pointRDDSplitter, carryOtherAttributes)
+      //        objectRDD.analyze()
+      //        objectRDD
+      //      }
+      //
+      //      val querySpatialRDD = {
+      //        val pointRDDInputLocation = "/home/vontman/Downloads/points_10M.csv"
+      //        val pointRDDOffset = 0 // The point long/lat starts from Column 0
+      //        val pointRDDSplitter = FileDataSplitter.CSV
+      //        val carryOtherAttributes = true // Carry Column 2 (hotel, gas, bar...)
+      //        var objectRDD = new PointRDD(sparkContext, pointRDDInputLocation, pointRDDOffset, pointRDDSplitter, carryOtherAttributes)
+      //        objectRDD.analyze()
+      //        objectRDD
+      //      }
 
       var resultList: List[JavaPairRDD[Point, java.util.List[Point]]] = List()
       for (solverInd <- solvers.indices) {
@@ -258,7 +257,7 @@ object KNNJoinBenchmark {
     val runId = System.currentTimeMillis()
 
     for (((querySize, queryRange), (inputSize, inputRange), k) <- List(
-      ((10000, 1000000), (10000, 1000000), 5),
+//      ((10000, 1000000), (10000, 1000000), 5),
       ((100000, 1000000), (100000, 1000000), 10),
       ((500000, 1000000), (500000, 1000000), 10),
       ((1000000, 1000000), (1000000, 1000000), 10),
@@ -275,10 +274,12 @@ object KNNJoinBenchmark {
       benchmark.compareKNNJoinSolvers(
         List(
           //          (new KNNJoinInPartitionOnly(), "KNN_InPartitionOnly"),
-                    (new KNNJoinWithCircles(ReduceKNNLogic.REDUCE_BY_KEY),
-                     "KNN_WithCirclesWithReduceByKey"),
-          (new KNNJoinWithCircles(ReduceKNNLogic.GROUP_BY_KEY),
-            "KNN_WithCirclesWithGroupByKey")
+          (new KNNJoinWithCircles(ReduceKNNLogic.GROUP_BY_KEY, false),
+            "KNN_WithCirclesWithReduceByKey"),
+          (new KNNJoinWithCircles(ReduceKNNLogic.GROUP_BY_KEY, true),
+            "KNN_WithCirclesWithReduceByKeyCool")
+          //          (new KNNJoinWithCircles(ReduceKNNLogic.GROUP_BY_KEY),
+          //            "KNN_WithCirclesWithGroupByKey")
           //       (KNNJoinNaive, "KNN_Naive")
         ),
         inputSize,

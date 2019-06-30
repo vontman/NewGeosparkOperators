@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
+import java.util.PriorityQueue;
 import java.util.stream.IntStream;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -23,30 +24,71 @@ import org.datasyslab.geospark.spatialRDD.CircleRDD;
 import org.datasyslab.geospark.spatialRDD.SpatialRDD;
 import scala.Tuple2;
 import scala.collection.mutable.StringBuilder;
+import utils.IndexNode;
+import utils.RtreeNode;
 
 public class KNNJoinWithCircles implements KNNJoinSolver {
 
     private ReduceKNNLogic reduceKNNLogic;
+    private boolean lol;
 
     public KNNJoinWithCircles() {
         this.reduceKNNLogic = ReduceKNNLogic.REDUCE_BY_KEY;
     }
 
-    public KNNJoinWithCircles(ReduceKNNLogic reduceKnnLogic) {
+    public KNNJoinWithCircles(ReduceKNNLogic reduceKnnLogic, boolean lol) {
         this.reduceKNNLogic = reduceKnnLogic;
+        this.lol = lol;
     }
 
     static private void setUpIndex(SpatialRDD<Point> dataRDD, SpatialRDD<Point> queryRDD)
         throws Exception {
         dataRDD.boundaryEnvelope.expandToInclude(queryRDD.boundaryEnvelope);
 
-        dataRDD.spatialPartitioning(GridType.QUADTREE);
+        dataRDD.spatialPartitioning(GridType.RTREE);
         dataRDD.buildIndex(IndexType.RTREE, true);
         queryRDD.spatialPartitioning(dataRDD.getPartitioner());
         queryRDD.buildIndex(IndexType.RTREE, true);
 
         dataRDD.indexedRDD.cache();
         queryRDD.indexedRDD.cache();
+    }
+
+    static private List<Tuple2<Envelope, Integer>> computeCoolBoundsAndSizes(
+        SpatialRDD<Point> dataRDD) {
+
+        final int MAX_NODES_PER_PART =  20;
+        JavaRDD<IndexNode> nodeRDD = dataRDD.indexedRDD.map(index -> new RtreeNode(((STRtree)index).getRoot()));
+
+        JavaRDD<Tuple2<Envelope, Integer>> x = nodeRDD
+            .mapPartitions((Iterator<IndexNode> indices) -> {
+                List<Tuple2<Envelope, Integer>> ret = new ArrayList<>();
+
+                indices.forEachRemaining(
+                    node -> {
+                        PriorityQueue<IndexNode> pq = new PriorityQueue<>(
+                            Comparator.comparingDouble(a -> -a.getBounds().getArea()));
+
+                        pq.add(node);
+                        while(pq.size() + ret.size() < MAX_NODES_PER_PART && pq.stream().anyMatch(IndexNode::hasChildren)) {
+                            final IndexNode currNode = pq.poll();
+                            if (currNode.hasChildren()) {
+                                List<IndexNode> l = scala.collection.JavaConverters.seqAsJavaListConverter(currNode.getChildren()).asJava();
+                                pq.addAll(l);
+                            } else {
+                                ret.add(Tuple2.apply(currNode.getBounds(), currNode.getPointsCount()));
+                            }
+                        }
+
+                        pq.forEach(cnode -> {
+                            ret.add(Tuple2.apply(cnode.getBounds(), cnode.getPointsCount()));
+                        });
+                    }
+                );
+                return ret.iterator();
+            }, true).filter(tuple -> tuple._1 != null);
+
+        return new ArrayList<>(x.collect());
     }
 
     static private List<Tuple2<Envelope, Integer>> computeBoundsAndSizes(
@@ -244,7 +286,12 @@ public class KNNJoinWithCircles implements KNNJoinSolver {
 
         setUpIndex(dataRDD, queryRDD);
 
-        List<Tuple2<Envelope, Integer>> boundsAndSizes = computeBoundsAndSizes(dataRDD);
+        List<Tuple2<Envelope, Integer>> boundsAndSizes;
+        if (lol) {
+            boundsAndSizes = computeCoolBoundsAndSizes(dataRDD);
+        } else {
+            boundsAndSizes = computeBoundsAndSizes(dataRDD);
+        }
 
         final CircleRDD knnCirclesFromEachPartition = computeKnnCirclesFromEachPartition(
             dataRDD, queryRDD, boundsAndSizes, k);

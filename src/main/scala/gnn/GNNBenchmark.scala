@@ -64,7 +64,8 @@ class GNNBenchmark(sparkContext: SparkContext,
       "finding_real_sol",
       "after_pruning",
       "pruning_percentage",
-      "total_time"
+      "total_time",
+      "result"
     ) ++
       (1 until 20).map(i => s"level_${i}_time") ++
       (1 until 20).map(i => s"level_${i}_querybounds") ++
@@ -115,7 +116,7 @@ class GNNBenchmark(sparkContext: SparkContext,
             inputGenerationStrategy.generate(sparkContext,
                                              querySize,
                                              range,
-                                             Random.nextDouble() * -.4)
+                                             -1.0 + Random.nextDouble() * -.4)
           rdd.analyze()
 //          rdd.saveAsGeoJSON(fileBaseName + "query.geojson")
           rdd
@@ -215,7 +216,8 @@ class GNNBenchmark(sparkContext: SparkContext,
                   .getArea
                   .toString,
               "input_generation_strategy" -> inputGenerationStrategy.getClass.getSimpleName,
-              "query_generation_strategy" -> queryGenerationStrategy.getClass.getSimpleName
+              "query_generation_strategy" -> queryGenerationStrategy.getClass.getSimpleName,
+              "result" -> res._2.toString
             ) ++ logs)
           resultsCsv.flush()
 
@@ -279,7 +281,7 @@ class GNNBenchmark(sparkContext: SparkContext,
   }
 }
 
-object Benchmark {
+object GNNBenchmark {
 
   def main(args: Array[String]): Unit = {
     val sparkContext = SparkRunner.start()
@@ -289,16 +291,16 @@ object Benchmark {
     val benchmark = new GNNBenchmark(
       sparkContext,
       visualizeSolution = false,
-      visualizeResult = true,
+      visualizeResult = false,
       outputPath = System.getProperty("user.dir") +
         "/target/gnn/" + runId + "/"
     )
 
     benchmark.compareGnnSolvers(
       List(
-        (100000, 100000, 800000, 20)
+//        (10000, 10000, 800000, 20),
 //        (50000, 50000, 800000, 5),
-//        (100000, 100000, 800000, 40),
+        (100000, 100000, 800000, 40)
 //        (200000, 200000, 800000, 30),
 //        (10000, 10000, 800000, 30),
 //          (20000, 20000, 800000, 30),
@@ -318,12 +320,11 @@ object Benchmark {
 //        GenerateZipfData(.3)
       ),
       solvers = List(
-        //                      (GNNApprox, "ApproxGNN"),
+//                  (GNNApprox, "ApproxGNN"),
 //                  (NaiveGNN, "GNN_Naive"),
-//        (GNNWithPruning, "GNN_Pruning")
-        (GNNWithPruning(GridType.RTREE, IndexType.RTREE), "GNN_Pruning_rtree")
-//        (GNNWithPruning(GridType.QUADTREE, IndexType.QUADTREE),
-//         "GNN_Pruning_quadtree")
+        (GNNWithPruning(GridType.RTREE, IndexType.RTREE), "GNN_Pruning_rtree"),
+        (GNNWithPruning(GridType.QUADTREE, IndexType.QUADTREE), "GNN_Pruning_quadtree")
+//          (GNNMBM, "GNN_MBM")
       )
     )
 
