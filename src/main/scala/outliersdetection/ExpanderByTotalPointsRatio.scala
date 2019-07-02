@@ -11,8 +11,7 @@ object ExpanderByTotalPointsRatio {
 
     for {
       maxPartitionsRatio <- List(.1)
-//      threshold <- List(30000, 15000, 10000, 5000)
-      threshold <- List(10000000)
+      threshold <- List(10000)
 
     } yield (
       new ExpanderByTotalPointsRatio(maxPartitionsRatio, threshold), s"ExpanderByTotalPointsRatio_${maxPartitionsRatio}_${threshold}"

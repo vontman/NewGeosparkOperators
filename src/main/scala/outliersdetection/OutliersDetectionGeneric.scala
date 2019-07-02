@@ -38,12 +38,11 @@ class OutliersDetectionGeneric(gridType: GridType,
     inputRDD.buildIndex(indexType, true)
 
     val partitions: RDD[IndexNode] = levelsExpander.expand(inputRDD).cache()
+    logger += "expanding_partitions_time" -> (System.currentTimeMillis() - t0).toString
     val dataCount = inputRDD.spatialPartitionedRDD.count()
 
     println("Before # of Points = " + dataCount)
     println("# Partitions before pruning = " + partitions.count())
-    logger += "expanding_partitions_time" -> (System
-      .currentTimeMillis() - t0).toString
 
     val t1 = System.currentTimeMillis()
 
@@ -71,14 +70,13 @@ class OutliersDetectionGeneric(gridType: GridType,
     val idToProps = partitionsList.map(p => (p.id, p)).toMap
 
     val remainingPartitions = candidates.flatMap(_.neighbours).map(idToProps)
+    val remainingPartitionsCount = candidates.flatMap(_.neighbours).size
 
-    println(
-      "# Partitions after  pruning = " + candidates.flatMap(_.neighbours).size)
-    logger += "neighbour_partitions" -> candidates
-      .flatMap(_.neighbours)
-      .size
-      .toString
-    logger += "candidate_partitions" -> candidates.size.toString
+    println("# Partitions after  pruning = " + remainingPartitionsCount)
+
+    logger += ("neighbour_partitions" -> remainingPartitionsCount.toString)
+    logger += ("pruned_partitions" -> (partitions.count() - remainingPartitionsCount).toString)
+    logger += ("candidate_partitions" -> candidates.size.toString)
 
     val candidatePointsRDD: RDD[Point] = partitions
       .filter((node: IndexNode) => {
@@ -103,7 +101,7 @@ class OutliersDetectionGeneric(gridType: GridType,
 
     val candidatePointsCount = candidatePointsRDD.count()
     //    val filteredPointsCount = filteredPoints.approximateTotalCount
-    println("After # of Points = " + candidatePointsCount)
+    println("After # of candidate Points = " + candidatePointsCount)
 
     //    println(s"candidates count = $candidatePointsCount, filtered count = $filteredPointsCount, total count = ${inputRDD.approximateTotalCount}")
 
@@ -111,7 +109,7 @@ class OutliersDetectionGeneric(gridType: GridType,
     //      return (logger, candidatePoints)
     //    }
     //
-    Plotter.visualize(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, originalBounds, null)
+    //    Plotter.visualize(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, originalBounds, null)
     //
     //    Plotter.visualize(outputPath + "_B", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds)
     //
@@ -128,9 +126,8 @@ class OutliersDetectionGeneric(gridType: GridType,
       .flatMap(_.getAllPoints)
       .cache()
 
-    logger += "candidates_percentage" -> ((candidatePointsCount.toDouble / dataCount) * 100.0).toString
-
     {
+      logger += "candidates_percentage" -> ((candidatePointsCount.toDouble / dataCount) * 100.0).toString
       val neighboursCnt = neighboursRDD.count().toDouble
       logger += "neighbours_percentage" -> ((neighboursCnt / dataCount) * 100.0).toString
       logger += "pruning_percentage" -> (((dataCount.toDouble - neighboursCnt) / dataCount) * 100.0).toString
