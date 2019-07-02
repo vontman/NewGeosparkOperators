@@ -3,7 +3,7 @@ package outliersdetection
 import java.io.File
 
 import org.datasyslab.geospark.enums.{GridType, IndexType}
-import utils.{GenerateNonUniformData, GenerateUniformData, SparkRunner}
+import utils.{GenerateRandomGaussianClusters, SparkRunner}
 
 import scala.language.postfixOps
 
@@ -16,7 +16,7 @@ object OutliersDetectionRunner {
     deleteOldValidation()
 
     for (iter <- 0 to 1000) {
-      val data = GenerateUniformData().generate(sc, 50000, 100000, numPartitions = 4)
+      val data = GenerateRandomGaussianClusters(15, 1000, 5000).generate(sc, 20000, 10000000, numPartitions = 4)
 
       val n = 100
       val k = 100
@@ -33,16 +33,16 @@ object OutliersDetectionRunner {
 
       Array(
         new ExpanderByPointsRatioPerGrid(0.1, 700000, x => x.getBounds.getArea)
-//        new ExpanderByPointsRatioPerGrid(0.1, 700000, x => x.getPointsCount),
-//        new ExpanderByPointsRatioPerGrid(0.1, 700000, indexNode => indexNode.getPointsCount / indexNode.getBounds.getArea),
-//        new ExpanderWithAreaBounds(
-//          0.1,
-//          1000000,
-//          1.0 / 300,
-//          1.0 / 5000,
-//          indexNode => indexNode.getBounds.getArea),
-//        new ExpanderWithAreaBounds(.5, 5000, 1.0 / 300, 1.0 / 5000, indexNode => indexNode.getBounds.getArea),
-//      new ExpanderByTotalPointsRatio(0.1, 500000)
+        //        new ExpanderByPointsRatioPerGrid(0.1, 700000, x => x.getPointsCount),
+        //        new ExpanderByPointsRatioPerGrid(0.1, 700000, indexNode => indexNode.getPointsCount / indexNode.getBounds.getArea),
+        //        new ExpanderWithAreaBounds(
+        //          0.1,
+        //          1000000,
+        //          1.0 / 300,
+        //          1.0 / 5000,
+        //          indexNode => indexNode.getBounds.getArea),
+        //        new ExpanderWithAreaBounds(.5, 5000, 1.0 / 300, 1.0 / 5000, indexNode => indexNode.getBounds.getArea),
+        //      new ExpanderByTotalPointsRatio(0.1, 500000)
       ).foreach(expander => {
 
         val (genericLogs, genericAns) = OutliersDetectionGeneric(GridType.QUADTREE,
@@ -60,18 +60,17 @@ object OutliersDetectionRunner {
         println()
 
 
-
-        val (knnJoinLogs, knnJoinAns) = OutliersDetectionNaiveWithKNNJoin.findOutliersNaive(data, k, n)
-        println("Naive knn join")
-        println(knnJoinLogs.mkString("\n"))
-        println()
-
-
-        if (knnJoinAns != genericAns) {
-          println("Mismatch in answer")
-          println(s"Diff: ${knnJoinAns.diff(genericAns)}")
-        }
-        pruningIteration += 1
+//        val (knnJoinLogs, knnJoinAns) = OutliersDetectionNaiveWithKNNJoin.findOutliersNaive(data, k, n)
+        //        println("Naive knn join")
+        //        println(knnJoinLogs.mkString("\n"))
+        //        println()
+        //
+        //
+        //        if (knnJoinAns != genericAns) {
+        //          println("Mismatch in answer")
+        //          println(s"Diff: ${knnJoinAns.diff(genericAns)}")
+        //        }
+        //        pruningIteration += 1
 
       })
     }

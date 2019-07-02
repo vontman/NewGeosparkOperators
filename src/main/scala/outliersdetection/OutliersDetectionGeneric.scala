@@ -11,8 +11,8 @@ object OutliersDetectionGeneric {
             indexType: IndexType,
             levelsExpander: LevelExpander): OutliersDetectionGeneric = {
     new OutliersDetectionGeneric(gridType,
-                                 indexType,
-                                 levelsExpander: LevelExpander)
+      indexType,
+      levelsExpander: LevelExpander)
   }
 
 }
@@ -20,7 +20,7 @@ object OutliersDetectionGeneric {
 class OutliersDetectionGeneric(gridType: GridType,
                                indexType: IndexType,
                                levelsExpander: LevelExpander)
-    extends Serializable {
+  extends Serializable {
 
   def findOutliers(originalBounds: Envelope,
                    inputRDD: PointRDD,
@@ -111,7 +111,7 @@ class OutliersDetectionGeneric(gridType: GridType,
     //      return (logger, candidatePoints)
     //    }
     //
-    //    Plotter.visualize(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, originalBounds, null)
+    Plotter.visualize(outputPath + "_A", inputRDD.indexedRDD.sparkContext, inputRDD, originalBounds, null)
     //
     //    Plotter.visualize(outputPath + "_B", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds)
     //
@@ -178,8 +178,8 @@ class OutliersDetectionGeneric(gridType: GridType,
   }
 
   private def computeCandidatePartitions(
-      allPartitions: Iterable[PartitionProps],
-      n: Int): (Iterable[PartitionProps], Iterable[PartitionProps]) = {
+                                          allPartitions: Iterable[PartitionProps],
+                                          n: Int): (Iterable[PartitionProps], Iterable[PartitionProps]) = {
     var pointsToTake = n
 
     val minDkDist = allPartitions.toList
@@ -306,9 +306,9 @@ class OutliersDetectionGeneric(gridType: GridType,
     candidatesRDD.analyze()
     neighboursRDD.analyze()
     OutliersDetectionNaiveWithKNNJoin.findOutliersNaive2(candidatesRDD,
-                                                         k,
-                                                         n,
-                                                         neighboursRDD)
+      k,
+      n,
+      neighboursRDD)
   }
 
   private def reduceOutliers(neighbours: RDD[(IndexNode, Int)],
@@ -331,7 +331,7 @@ class OutliersDetectionGeneric(gridType: GridType,
                     .sortBy(c._1.distance)
                     .take(k)
                     .map(p => p.distance(c._1))
-              ))
+                ))
             .toList
         })
       )
