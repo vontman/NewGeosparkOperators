@@ -2,21 +2,10 @@ package utils
 
 import java.awt.Color
 import java.awt.image.BufferedImage
-import java.io.FileInputStream
-import java.util.Properties
 
-import com.vividsolutions.jts.geom.{
-  Coordinate,
-  Envelope,
-  Geometry,
-  GeometryFactory,
-  Point
-}
-import org.apache.log4j.{Level, Logger}
-import org.apache.spark.serializer.KryoSerializer
-import org.apache.spark.{SparkConf, SparkContext}
+import com.vividsolutions.jts.geom._
+import org.apache.spark.SparkContext
 import org.datasyslab.geospark.spatialRDD.{PolygonRDD, SpatialRDD}
-import org.datasyslab.geosparkviz.core.Serde.GeoSparkVizKryoRegistrator
 import org.datasyslab.geosparkviz.core.{ImageGenerator, RasterOverlayOperator}
 import org.datasyslab.geosparkviz.extension.visualizationEffect.ScatterPlot
 import org.datasyslab.geosparkviz.utils.ImageType
@@ -90,8 +79,8 @@ object Visualization {
   def buildScatterPlot(dataRDDs: Iterable[SpatialRDD[_ <: Geometry]],
                        outputPath: String,
                        boundary: Envelope): Boolean = {
-    val RES_X = 100
-    val RES_Y = 100
+    val RES_X = 400
+    val RES_Y = 400
     val COLORS = List(
       (Color.CYAN, Color.BLUE),
       (Color.ORANGE, Color.RED),
@@ -100,6 +89,8 @@ object Visualization {
       (Color.MAGENTA, Color.BLUE),
       (Color.YELLOW, Color.GREEN)
     )
+
+    boundary.expandBy(10)
 
     val visualizationOperators = dataRDDs.zipWithIndex.map({
       case (rdd, i) => {
