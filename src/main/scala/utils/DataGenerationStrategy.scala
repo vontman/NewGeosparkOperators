@@ -12,7 +12,7 @@ trait DataGenerationStrategy {
 
   def generate(sc: SparkContext,
                size: Int,
-               range: Int,
+               range: Int = 1000000,
                offset: Double = 0.0,
                numPartitions: Int = -1): PointRDD = {
     val slices = if (numPartitions == -1) {
@@ -20,7 +20,6 @@ trait DataGenerationStrategy {
     } else {
       numPartitions
     }
-
     new PointRDD(
       sc.parallelize(
         generate(sc, size, range, range * offset, range * offset),
