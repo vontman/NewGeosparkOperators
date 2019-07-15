@@ -4,7 +4,8 @@ import com.vividsolutions.jts.geom.{Envelope, Point}
 import org.apache.spark.rdd.RDD
 import org.datasyslab.geospark.enums.{GridType, IndexType}
 import org.datasyslab.geospark.spatialRDD.PointRDD
-import utils.IndexNode
+
+import scala.collection.mutable
 
 object OutliersDetectionGeneric {
   def apply(gridType: GridType,
@@ -14,7 +15,6 @@ object OutliersDetectionGeneric {
       indexType,
       levelsExpander: LevelExpander)
   }
-
 }
 
 class OutliersDetectionGeneric(gridType: GridType,
@@ -31,13 +31,19 @@ class OutliersDetectionGeneric(gridType: GridType,
     var logger = Map.empty[String, String]
 
     val t0 = System.currentTimeMillis()
-    //    println(s"Using gridType $gridType, indexType $indexType")
 
     inputRDD.analyze()
     inputRDD.spatialPartitioning(gridType)
     inputRDD.buildIndex(indexType, true)
 
-    val partitions: RDD[IndexNode] = levelsExpander.expand(inputRDD).cache()
+    val partitions = levelsExpander.expand(inputRDD).map(indexNode => {
+      val partitionProps = new PartitionProps()
+      partitionProps.size(indexNode.getPointsCount)
+      partitionProps.envelop(indexNode.getBounds)
+
+      (partitionProps, indexNode)
+    }).cache()
+
     logger += "expanding_partitions_time" -> (System.currentTimeMillis() - t0).toString
     val dataCount = inputRDD.spatialPartitionedRDD.count()
 
@@ -46,61 +52,33 @@ class OutliersDetectionGeneric(gridType: GridType,
 
     val t1 = System.currentTimeMillis()
 
-    val partitionPropsRDD = partitions.zipWithIndex
-      .map({
-        case (indexNode, id) =>
-          val partitionProps = new PartitionProps()
-          partitionProps.id(id.toInt)
-          partitionProps.size(indexNode.getPointsCount)
-          partitionProps.envelop(indexNode.getBounds)
+    val partitionPropsAnalyzed = computeLowerUpper(partitions.map(_._1), k).cache()
+    val candidatesToNeighbours = computeCandidatePartitions(partitionPropsAnalyzed, n).cache()
 
-          partitionProps
-      })
-      .cache()
-
-    var partitionsList = partitionPropsRDD.collect.toList
-
-    val partitionPropsAnalyzed =
-      partitionPropsRDD.map(computeLowerUpper(partitionsList, _, k)).cache()
-    val tmp = computeCandidatePartitions(partitionPropsAnalyzed.collect, n)
-    partitionsList = tmp._1.toList
-    val candidates: Set[PartitionProps] = tmp._2.toSet
-
-    val envsToProps = partitionsList.map(p => (p.envelop, p)).toMap
-    val idToProps = partitionsList.map(p => (p.id, p)).toMap
-
-    val remainingPartitions = candidates.flatMap(_.neighbours).map(idToProps)
-    val remainingPartitionsCount = candidates.flatMap(_.neighbours).size
+    val remainingPartitionsCount = candidatesToNeighbours.flatMap(_._2).distinct.count()
 
     println("# Partitions after  pruning = " + remainingPartitionsCount)
 
     logger += ("neighbour_partitions" -> remainingPartitionsCount.toString)
     logger += ("pruned_partitions" -> (partitions.count() - remainingPartitionsCount).toString)
-    logger += ("candidate_partitions" -> candidates.size.toString)
-
-    val candidatePointsRDD: RDD[Point] = partitions
-      .filter((node: IndexNode) => {
-        val currentPartition = new PartitionProps
-        currentPartition.envelop(node.getBounds)
-        candidates.contains(currentPartition)
-      })
-      .mapPartitions(_.flatMap(_.getAllPoints))
-
-    //    val filteredPointsRDD: RDD[Point] = partitions.filter((node: IndexNode) => {
-    //      val currentPartition = new PartitionProps
-    //      currentPartition.envelop(node.getBounds)
-    //      filteredPartitions.contains(currentPartition)
-    //    }).mapPartitions(_.flatMap(_.getAllPoints))
-
+    logger += ("candidate_partitions" -> candidatesToNeighbours.keys.count.toString)
     logger += "pruning_time" -> (System.currentTimeMillis() - t1).toString
 
-    //    val candidatePoints = new PointRDD(candidatePointsRDD)
-    //    val filteredPoints = new PointRDD(filteredPointsRDD)
+    val candidatePointsToNeighbourPoints =
+      candidatesToNeighbours
+        .join(partitions)
+        .map(e => (e._2._1, e._2._2))
+        .cartesian(partitions)
+        .groupByKey
+        .map(e => {
+          val key = e._1
+          val value = e._2.toMap
+          (key._2, key._1.map(value))
+        }).map(e => (e._1.getAllPoints, e._2.flatMap(_.getAllPoints)))
+        .map(e => e._1.map((_, e._2)))
+        .flatMap(e => e).cache()
 
-    //    Array(candidatePoints, filteredPoints).foreach(_.analyze)
-
-    val candidatePointsCount = candidatePointsRDD.count()
-    //    val filteredPointsCount = filteredPoints.approximateTotalCount
+    val candidatePointsCount = candidatePointsToNeighbourPoints.keys.count()
     println("After # of candidate Points = " + candidatePointsCount)
 
     //    println(s"candidates count = $candidatePointsCount, filtered count = $filteredPointsCount, total count = ${inputRDD.approximateTotalCount}")
@@ -117,133 +95,132 @@ class OutliersDetectionGeneric(gridType: GridType,
     //
     //      Plotter.visualize(outputPath + "_D", inputRDD.indexedRDD.sparkContext, candidatePoints, originalBounds, filteredPoints, partitionsList)
 
-    val sc = inputRDD.rawSpatialRDD.sparkContext
+    //    val sc = inputRDD.rawSpatialRDD.sparkContext
 
-    val t2 = System.currentTimeMillis()
-    val neighboursRDD = partitions
-      .filter(indexNode =>
-        remainingPartitions.contains(envsToProps(indexNode.getBounds)))
-      .flatMap(_.getAllPoints)
-      .cache()
+    //    val t2 = System.currentTimeMillis()
 
-    {
-      logger += "candidates_percentage" -> ((candidatePointsCount.toDouble / dataCount) * 100.0).toString
-      val neighboursCnt = neighboursRDD.count().toDouble
-      logger += "neighbours_percentage" -> ((neighboursCnt / dataCount) * 100.0).toString
-      logger += "pruning_percentage" -> (((dataCount.toDouble - neighboursCnt) / dataCount) * 100.0).toString
-    }
+    //    {
+    //      logger += "candidates_percentage" -> ((candidatePointsCount.toDouble / dataCount) * 100.0).toString
+    //      val neighboursCnt = neighboursRDD.count().toDouble
+    //      logger += "neighbours_percentage" -> ((neighboursCnt / dataCount) * 100.0).toString
+    //      logger += "pruning_percentage" -> (((dataCount.toDouble - neighboursCnt) / dataCount) * 100.0).toString
+    //    }
 
-    reduceOutliersWithKNNJoin(
-      neighboursRDD,
-      candidatePointsRDD,
-      k,
-      n
-    )
+    //    reduceOutliersWithKNNJoin(
+    //      neighboursRDD,
+    //      candidatePointsRDD,
+    //      k,
+    //      n
+    //    )
 
-    logger += "reducing_outliers_time_knnjoin" -> (System
-      .currentTimeMillis() - t2).toString
-
-
-    val t3 = System.currentTimeMillis()
-    val broadcastEnvsToProps = sc.broadcast(envsToProps)
-    val neighboursPairRDD = partitions
-      .filter(indexNode =>
-        remainingPartitions.contains(broadcastEnvsToProps.value(indexNode.getBounds)))
-      .map(indexNode => (indexNode, broadcastEnvsToProps.value(indexNode.getBounds).id))
-
-    val candidatesWithNeighbours = partitions
-      .filter(indexNode =>
-        candidates.contains(broadcastEnvsToProps.value(indexNode.getBounds)))
-      .flatMap(indexNode =>
-        indexNode.getAllPoints.map(
-          (_, broadcastEnvsToProps.value(indexNode.getBounds).neighbours.toSet)))
-      .collect
-      .toSet
+    //    logger += "reducing_outliers_time_knnjoin" -> (System
+    //      .currentTimeMillis() - t2).toString
+    //
+    //
+    //    val t3 = System.currentTimeMillis()
+    //    val broadcastEnvsToProps = sc.broadcast(envsToProps)
+    //    val neighboursPairRDD = partitions
+    //      .filter(indexNode =>
+    //        remainingPartitions.contains(broadcastEnvsToProps.value(indexNode.getBounds)))
+    //      .map(indexNode => (indexNode, broadcastEnvsToProps.value(indexNode.getBounds).id))
+    //
+    //    val candidatesWithNeighbours = partitions
+    //      .filter(indexNode =>
+    //        candidates.contains(broadcastEnvsToProps.value(indexNode.getBounds)))
+    //      .flatMap(indexNode =>
+    //        indexNode.getAllPoints.map(
+    //          (_, broadcastEnvsToProps.value(indexNode.getBounds).neighbours.toSet)))
+    //      .collect
+    //      .toSet
 
     val ans = reduceOutliers(
-      neighboursPairRDD,
-      candidatesWithNeighbours,
+      candidatePointsToNeighbourPoints,
       k,
       n
     )
-    logger += "reducing_outliers_time" -> (System.currentTimeMillis() - t3).toString
-    logger += "reducing_outliers_time_custom" -> (System
-      .currentTimeMillis() - t3).toString
-    logger += "total_time" -> (System.currentTimeMillis() - t0).toString
+    //    logger += "reducing_outliers_time" -> (System.currentTimeMillis() - t3).toString
+    //    logger += "reducing_outliers_time_custom" -> (System
+    //      .currentTimeMillis() - t3).toString
+    //    logger += "total_time" -> (System.currentTimeMillis() - t0).toString
 
     (logger, ans)
   }
 
-  private def computeCandidatePartitions(
-                                          allPartitions: Iterable[PartitionProps],
-                                          n: Int): (Iterable[PartitionProps], Iterable[PartitionProps]) = {
+  private def computeCandidatePartitions(partitions: RDD[PartitionProps], n: Int) = {
     var pointsToTake = n
 
-    val minDkDist = allPartitions.toList
-      .sortBy(-_.lower)
-      .takeWhile(p => {
-        if (pointsToTake > 0) {
-          pointsToTake -= p.size
-          true
-        } else {
-          false
+    val minDkDist = partitions
+      .aggregate((0, new mutable.PriorityQueue[PartitionProps]()(Ordering.by(-_.lower))))((agg, p) => {
+        val q = agg._2
+        q += p
+        var count = agg._1 + p.size
+
+        while (count - q.head.size >= n) {
+          count -= q.dequeue().size
         }
+
+        (count, q)
+      }, (agg1, agg2) => {
+        var count = agg1._1 + agg2._1
+        val q = agg1._2
+        q ++= agg2._2
+
+        println(s">>>>>>>>>> Q    ==> PointsCount = $count, QueueSize = ${q.size}")
+        while (q.nonEmpty && count - q.head.size >= n) {
+          count -= q.dequeue().size
+        }
+        println(s"<<<<<<<<<< Q    ==> PointsCount = $count, QueueSize = ${q.size}")
+
+        (count, q)
+      })._2.map(_.lower).min
+
+
+    partitions
+      .filter(p => p.upper >= minDkDist)
+      .cartesian(partitions)
+      .groupByKey
+      .map({ case (p, ps) =>
+        (p, ps.filter(cn => getMinDist(cn.envelop, p.envelop) <= p.upper))
       })
-      .map(_.lower)
-      .min
-
-    allPartitions.foreach(p => p.neighbours(Set(p.id)))
-
-    val candidatePartitions: Iterable[PartitionProps] =
-      allPartitions.filter(_.upper >= minDkDist)
-    candidatePartitions.foreach(c => {
-      c.neighbours(
-        allPartitions
-          .filter(cn => getMinDist(cn.envelop, c.envelop) <= c.upper)
-          .map(_.id)
-          .toSet)
-    })
-
-    (allPartitions, candidatePartitions)
   }
 
-  private def computeLowerUpper(allPartitions: List[PartitionProps],
-                                partition: PartitionProps,
-                                k: Int): PartitionProps = {
+  private def computeLowerUpper(partitions: RDD[PartitionProps], k: Int): RDD[PartitionProps] = {
 
-    var knnVal = k
-    partition.lower(
-      allPartitions
-        .sortBy(p => getMinDist(partition.envelop, p.envelop))
-        .takeWhile(p => {
-          if (knnVal > 0) {
-            knnVal -= p.size
-            true
-          } else {
-            false
-          }
-        })
-        .map(p => getMinDist(partition.envelop, p.envelop))
-        .max
-    )
-
-    knnVal = k
-    partition.upper(
-      allPartitions
-        .sortBy(p => getMaxDist(partition.envelop, p.envelop))
-        .takeWhile(p => {
-          if (knnVal > 0) {
-            knnVal -= p.size
-            true
-          } else {
-            false
-          }
-        })
-        .map(p => getMaxDist(partition.envelop, p.envelop))
-        .max
-    )
-
-    partition
+    partitions.cartesian(partitions)
+      .groupByKey
+      .mapValues(_.toList)
+      .map(e => (e._1, e._2.sortBy(q => getMinDist(q.envelop, e._1.envelop))))
+      .map(e => {
+        var knnVal = k
+        e._1.lower(
+          e._2.takeWhile(q => {
+            if (knnVal > 0) {
+              knnVal -= q.size
+              true
+            } else {
+              false
+            }
+          }).map(q => getMinDist(q.envelop, e._1.envelop))
+            .max
+        )
+        e
+      })
+      .map(e => (e._1, e._2.sortBy(q => getMaxDist(q.envelop, e._1.envelop))))
+      .map(e => {
+        var knnVal = k
+        e._1.upper(
+          e._2.takeWhile(q => {
+            if (knnVal > 0) {
+              knnVal -= q.size
+              true
+            } else {
+              false
+            }
+          }).map(q => getMaxDist(q.envelop, e._1.envelop))
+            .max
+        )
+        e
+      }).keys
   }
 
   private def getMinDist(env1: Envelope, env2: Envelope): Double = {
@@ -308,63 +285,12 @@ class OutliersDetectionGeneric(gridType: GridType,
       neighboursRDD)
   }
 
-  private def reduceOutliers(neighbours: RDD[(IndexNode, Int)],
-                             candidates: Iterable[(Point, Set[Int])],
+  private def reduceOutliers(candidateToNeighbours: RDD[(Point, Iterable[Point])],
                              k: Int,
                              n: Int): List[Point] = {
-    neighbours
-      .mapPartitions(
-        _.flatMap(x => {
-          val indexNode = x._1
-          val id = x._2
-          candidates
-            .view
-            .filter(_._2.contains(id))
-            .map(
-              c =>
-                (
-                  c._1,
-                  indexNode.getAllPoints
-                    .sortBy(c._1.distance)
-                    .take(k)
-                    .map(p => p.distance(c._1))
-                ))
-            .toList
-        })
-      )
-      .groupByKey()
-      .mapValues(knnsIter => {
-        val knns = knnsIter.toArray
-        var res = Double.MaxValue
-        val ids = Array.fill(knns.length)(0)
-
-        for (_ <- 0 until k) {
-          var chosenList = -1
-          var best = 0.0
-
-          for (j <- knns.indices) {
-            val l = knns(j)
-            val index = ids(j)
-            if (index < l.length) {
-              val v = l(index)
-              if (chosenList == -1 || best > v) {
-                best = v
-                chosenList = j
-              }
-            }
-          }
-
-          if (chosenList != -1) {
-            res = best
-            ids(chosenList) += 1
-          }
-        }
-
-        res
-      })
-      .takeOrdered(n)(
-        Ordering.by((g: (Point, Double)) => g._2).reverse
-      )
+    candidateToNeighbours
+      .map(e => (e._1, e._2.toList.sortBy(e._1.distance).take(k).takeRight(1).map(e._1.distance).max))
+      .takeOrdered(n)(Ordering.by(-_._2))
       .map(_._1)
       .toList
   }
